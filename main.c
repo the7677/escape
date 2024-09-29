@@ -1,10 +1,16 @@
 #include <stdlib.h>
 #include <stdbool.h>
+#include <string.h>
+#include<locale.h>
 #include <ncurses.h>
 
+
 // macro for dynamic allocation
-#define new(T)              (T*)malloc(sizeof(T))
-#define new2(T, rows, cols) (T**)malloc(rows * sizeof(T*) + (sizeof(T) * rows * cols))
+#define new(T) (T*)malloc(sizeof(T))
+
+#define WORLD_WIDTH  20
+#define WORLD_HEIGHT 10
+#define WRONG_PASSWD_MSG "\033[30;103mSenha incorreta. Não desista!\033[m\n"
 
 // --- ENGINE ---------------------------------------
 
@@ -16,6 +22,8 @@ typedef struct {
 typedef struct {
 	Point pos;
 	char ch;
+	int fgcolor;
+	int bgcolor;
 } Entity;
 
 enum TileID {
@@ -28,15 +36,19 @@ enum TileID {
 
 typedef struct {
 	enum TileID id;
+	char title[32];
 	char ch;
+	int fgcolor;
+	int bgcolor;
 	bool walkable;
+	bool seen;
 } Tile;
 
 enum Signal {
 	BREAK     = 0b00000001,
 	NEXT_TURN = 0b00000010,
 	
-	NONE      = 0b00001000
+	NONE      = 0b10000000
 };
 
 // Consts
@@ -44,10 +56,10 @@ const long double PI = 3.14159265359;
 
 // Vars
 Entity* player;
-Tile** world;
+Tile** map;
 
-// World
-char map[][21] = {
+// Map
+char map_sketch[WORLD_HEIGHT][WORLD_WIDTH+1] = {
 	"####################",
 	"#..................#",
 	"#..................#",
@@ -60,38 +72,42 @@ char map[][21] = {
 	"####################"
 };
 
-const Tile wall   = (Tile){WALL, '#', false};
-const Tile ground = (Tile){GROUND, '.', true};
-const Tile door   = (Tile){DOOR, '+', false};
-const Tile blanktile = (Tile){BLANK, ' ', true};
+//                          id       tl                         ch    fg  bg  wlkb    seen
+const Tile wall   = (Tile){ WALL   , "A wall."                , '%' , 1 , 0 , false , false };
+const Tile ground = (Tile){ GROUND , "The ground."            , '.' , 1 , 0 , true  , false };
+const Tile door   = (Tile){ DOOR   , "A door. Can be opened." , '+' , 1 , 0 , false , false };
+
+const Tile blanktile = (Tile){BLANK, "", '!', 1, 0, true, false};
 
 // Fns
 void playermv(int, int);
 
 Tile** worldgen() {
-	Tile** world = (Tile**)malloc(10 * sizeof(Tile*)); // Aloca espaço para 10 linhas
-    for (int i = 0; i < 10; i++) world[i] = (Tile*)malloc(21 * sizeof(Tile));   // Aloca espaço para 21 colunas
+	Tile** map = (Tile**)malloc(10 * sizeof(Tile*));                          // Aloca espaço para 10 linhas
+    for (int i = 0; i < WORLD_HEIGHT; i++) map[i] = (Tile*)malloc(21 * sizeof(Tile));   // Aloca espaço para 21 colunas
 	
-	for (int y = 0; y < 10; y++) {
-		for (int x = 0; x < 21; x++) {
-			switch (map[y][x]) {
+	for (int y = 0; y < WORLD_HEIGHT; y++) {
+		for (int x = 0; x < WORLD_WIDTH; x++) {
+			char ch = map_sketch[y][x];
+			
+			switch (ch) {
 			case '#':
-				world[y][x] = wall;
+				map[y][x] = wall;
 				break;
 			case '.':
-				world[y][x] = ground;
+				map[y][x] = ground;
 				break;
 			case '+':
-				world[y][x] = door;
+				map[y][x] = door;
 				break;
 			default:
-				world[y][x] = blanktile;
+				map[y][x] = blanktile;
 			}
 		}
 		
 	}
 	
-	return world;
+	return map;
 }
 
 enum Signal controls(int input) {
@@ -102,6 +118,23 @@ enum Signal controls(int input) {
 	case KEY_DOWN:  playermv(0, 1);  break;
 	case KEY_LEFT:  playermv(-1, 0); break;
 	case KEY_RIGHT: playermv(1, 0);  break;
+
+	case 'C':
+		int x, y;
+		
+		for (int i = -1; i <= 1; i++) {
+			for (int j = -1; j <= 1; j++) {
+				x = player->pos.x + i;
+				y = player->pos.y + j;
+				
+				if (map[y][x].id == DOOR || map[y][x].id == KEYLOCKED_DOOR) {
+					map[y][x].walkable = false;
+					map[y][x].ch = '+';
+				}
+			}
+		}
+		
+		break;
 	
 	default: break;
 	}
@@ -110,26 +143,30 @@ enum Signal controls(int input) {
 }
 
 void init() {
-	initscr();
-	noecho();
-	curs_set(0);
-	nodelay(stdscr, TRUE); // evita pausa no getch
-	keypad(stdscr, TRUE);  // habilita captura de mais teclas
+	// Locale
+	setlocale(LC_CTYPE, ""); // Muda locale para UTF=8
+
+	// Ncurses
+	initscr();            // Inicia a tela do ncurses
+	start_color();        // Inicia a compatibilidade com cores
+	noecho();             // Impede o eco da tecla apertada
+	curs_set(0);          // Esconde o cursor
+	keypad(stdscr, TRUE); // habilita captura de mais teclas
 
 	// Player
 	player = new(Entity);
 	player->pos = (Point){5, 5};
 	player->ch = '@';
+	player->fgcolor = COLOR_PAIR(2);
 
 	// World
-	world = worldgen();
+	map = worldgen();
 }
 
 void loop() {
 	int input;
 	
-	while ((input = getch())) {
-		
+	do {
 		/* Controls */ {
 			if (controls(input) & BREAK) break;
 		}
@@ -139,22 +176,26 @@ void loop() {
 		}
 
 		/* Draw */ {
-			clear();
+			erase();
 
+			// draw world
 			for (int y = 0; y < 10; y++) {
-				for (int x = 0; x < 21; x++) {
+				for (int x = 0; x < 20; x++) {
 
-					mvaddch(y, x, world[y][x].ch);
+					mvaddch(y, x, map[y][x].ch | map[y][x].fgcolor);
 					
 				}
 			}
 
 			mvaddch(player->pos.y, player->pos.x, player->ch);
-
+			// init_pair()
+			printw("<-você");
+			
 			refresh();
-			napms(100);
-		}		
-	}
+			napms(1);
+		}
+
+	} while ((input = getch()));
 }
 
 void close() {
@@ -162,30 +203,36 @@ void close() {
 
 	free(player);
 	
-	for (int i = 0; i < 10; i++) free(world[i]);
-	free(world);	
+	for (int i = 0; i < 10; i++) free(map[i]);
+	free(map);	
 }
 
 // --- PLAYER ---------------------------------------
 
 void playermv(int x, int y) {
-	if (world[player->pos.y + y][player->pos.x + x].walkable) {
+	if (map[player->pos.y + y][player->pos.x + x].walkable) {
 		player->pos.x += x;
 		player->pos.y += y;
-	} else if (world[player->pos.y + y][player->pos.x + x].id == DOOR) {
-		world[player->pos.y + y][player->pos.x + x].walkable = true;
-		world[player->pos.y + y][player->pos.x + x].ch = '\'';
+	} else if (map[player->pos.y + y][player->pos.x + x].id == DOOR) {
+		map[player->pos.y + y][player->pos.x + x].walkable = true;
+		map[player->pos.y + y][player->pos.x + x].ch = '\'';
 	}
 }
 
 
 // --- MAIN -----------------------------------------
 
-int main(int, char**) {
+int main(int argc, char *argv[]) {
 	// Calls
-	init();
-	loop();
-	close();
+	if (argc > 1 && !strcmp(argv[1], "ghost")) {
+		init();
+		loop();
+		close();
+		
+		return 0;
+	}
+	
+	printf(WRONG_PASSWD_MSG);
 
-	return 0;	
+	return 0;
 }

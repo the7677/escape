@@ -19,7 +19,7 @@
 #define COLOR_DESC     6
 
 #define SEED 01110111-01100001-01110010-01100100 
-#define TICK_MS 1
+#define DELAY 10
 
 #define NO_ARGS_MSG      "\033[30;103margv?\033[m\n"
 #define WRONG_PASSWD_MSG "\033[30;103mSenha incorreta. Não desista!\033[m\n"
@@ -86,12 +86,13 @@ Entity* player;
 Tile** map;
 Point cursorpos;
 Point popup_pos = {0, 0};
+char buff[64] = "";
 char name[32] = "você";
 enum Menu menu = SHORTCUTS;
 enum Gamemode mode = NORMAL;
 
 // Map
-const char map_sketch[WORLD_HEIGHT][WORLD_WIDTH+1] = {
+const char map1_sketch[WORLD_HEIGHT][WORLD_WIDTH+1] = {
 	"#########################",
 	"#.......................#",
 	"#.####%################.#",
@@ -108,7 +109,7 @@ const char map_sketch[WORLD_HEIGHT][WORLD_WIDTH+1] = {
 	"#.#<.#..|...|..########.#",
 	"#.#..|..#...#..|..#####.#",
 	"#.#######...####..%%%##.#",
-	"#.#####################.#",
+	"#.##################%##.#",
 	"#.....##.......##.......#",
 	"#.....#.##...##.#.......#",
 	"#.....#....n....#.......#",
@@ -142,8 +143,8 @@ const char cheatsheet[][70] = {
 	"│                     │",
 	"│                     │",
 	"│                     │",
-	"│                     │",
-	"│                     │",
+	"│<      subir escada  │",
+	"│>      descer escad  │",
 	"╰─────────────────────╯",
 };
 
@@ -153,7 +154,7 @@ const Tile fakewall = (Tile){ WALL     , ' ' , COLOR_PAIR(COLOR_WALL)    , true 
 const Tile ground   = (Tile){ GROUND   , '.' , COLOR_PAIR(COLOR_GROUND) , true  , false , false, "O chão" };
 const Tile hdoor    = (Tile){ HDOOR    , '-' , COLOR_PAIR(COLOR_DEFAULT) , false , false , false, "Uma porta. Parece destrancada" };
 const Tile vdoor    = (Tile){ VDOOR    , '|' , COLOR_PAIR(COLOR_DEFAULT) , false , false , false, "Uma porta. Parece destrancada" };
-const Tile lockdoor = (Tile){ LOCKDOOR , '=' , COLOR_PAIR(COLOR_DEFAULT) , false , false , false, "Uma porta. Há uma fechadura nela"}; 
+const Tile lockdoor = (Tile){ LOCKDOOR , '#' , COLOR_PAIR(COLOR_DEFAULT) , false , false , false, "Uma porta. Há uma fechadura nela"}; 
 
 
 const Tile blanktile = (Tile){BLANK, '!', COLOR_PAIR(COLOR_DEFAULT), true, false, false, "BLANKTILE"};
@@ -170,7 +171,7 @@ Tile** worldgen() {
 	
 	for (int y = 0; y < WORLD_HEIGHT; y++) {
 		for (int x = 0; x < WORLD_WIDTH; x++) {
-			char ch = map_sketch[y][x];
+			char ch = map1_sketch[y][x];
 			
 			switch (ch) {
 			case '#':
@@ -204,20 +205,28 @@ Tile** worldgen() {
 }
 
 enum Signal controls(int input) {
-	if (input >= 65 && input < 91) input += 32; // converte para minúsculo
+	while (getch() != ERR) {} // Limpa o getch()
+	if (input == ERR) {
+		return NONE;
+	}
+	
 
-	// Sair
+	// Voltar/Sair
 	if (input == 'q') {
 		switch (mode) {
 		case NORMAL:
 			attron(COLOR_PAIR(COLOR_DESC));
+			
 			mvprintw(popup_pos.y+0, popup_pos.x, "╭────────────────────────────────╮");
 			mvprintw(popup_pos.y+1, popup_pos.x, "│O jogo não é salvo. Sair? (s/n).│");
 			mvprintw(popup_pos.y+2, popup_pos.x, "╰────────────────────────────────╯");
+			
 			attroff(COLOR_PAIR(COLOR_DESC));
 
-			input = getch(); if (input >= 65 && input < 91) input += 32;
+			input = getch();
+			if (input >= 65 && input < 91) input += 32;
 			if (input == 's' || input == 'y') return BREAK;
+			return CONTINUE;
 			return NONE;
 		case LOOK:
 			mode = NORMAL;
@@ -229,7 +238,7 @@ enum Signal controls(int input) {
 		}
 	}	
 
-	// Look
+	// Examinar
 	if (mode == NORMAL && input == 'l') {
 		mode = LOOK;
 
@@ -287,13 +296,14 @@ void init() {
 	setlocale(LC_CTYPE, ""); // Muda locale para UTF-8
 
 	// Seed
-	srand(SEED);
+	srand(SEED);             // Define a seed de aleatoriedade
 
 	// Ncurses
 	initscr();               // Inicia a tela do ncurses
 	noecho();                // Impede o eco da tecla apertada
 	curs_set(0);             // Esconde o cursor
 	keypad(stdscr, TRUE);    // habilita captura de mais teclas
+	nodelay(stdscr, TRUE);   // Desabilita a pausa do getch()
 
 	// Ncurses - Cor
 	start_color();           // Inicia a compatibilidade com cores
@@ -303,6 +313,8 @@ void init() {
 	init_pair(COLOR_WALL, COLOR_BLACK, COLOR_CYAN);
 	init_pair(COLOR_GROUND, COLOR_MAGENTA, COLOR_BLACK);
 	init_pair(COLOR_DESC, COLOR_BLACK, COLOR_GREEN);
+
+	// Mapa
 	
 	// Player
 	player = new(Entity);
@@ -317,11 +329,14 @@ void init() {
 void loop() {
 	int input = ' ', turn = 0, ticks = 0;
 	enum Signal signal;
-	bool l_pressed = false;
+	bool l_pressed = false, g_pressed = false;
 
 	do {
+		if (input >= 65 && input < 91) input += 32; // converte input para minúsculo
+
 		/* Controls */ {
 			if (input == 'l') l_pressed = true;	
+			if (input == 'g') g_pressed = true;	
 			signal = controls(input);
 						
 		}
@@ -332,10 +347,10 @@ void loop() {
 				turn++;
 			}
 
-			if (player->pos.y > 12) popup_pos.y = 0;
-			else                    popup_pos.y = 15;
+			if (player->pos.y > 9) popup_pos.y = 0;
+			else                   popup_pos.y = 16;
 
-			if (ticks % 100 == 0) player->color = player->color == COLOR_PAIR(COLOR_DEFAULT) ? 1 : 2;
+			if (ticks % 400 == 0) player->color = player->color == COLOR_PAIR(COLOR_DEFAULT) ? COLOR_PAIR(COLOR_DEFAULT2) : COLOR_PAIR(COLOR_DEFAULT);
 		}
 		
 		/* Draw */ {
@@ -352,9 +367,10 @@ void loop() {
 			}
 
 
-			mvaddch(player->pos.y, player->pos.x, player->ch);
-			
-			if (turn <= 10) {
+			mvaddch(player->pos.y, player->pos.x, player->ch | player->color);
+
+			// Tutorial
+			if (turn <= 10 && mode == NORMAL) {
 				attron(COLOR_PAIR(COLOR_DESC));
 
 				mvaddch(player->pos.y, player->pos.x+1, '<');
@@ -374,6 +390,14 @@ void loop() {
 				mvprintw(popup_pos.y+2, popup_pos.x, "╰─────────────────────────────╯");
 				
 				attroff(COLOR_PAIR(COLOR_DESC));
+			} else if (!g_pressed && mode == NORMAL) {
+				attron(COLOR_PAIR(COLOR_DESC));
+								
+				mvprintw(popup_pos.y+0, popup_pos.x, "╭────────────────────────────╮");
+				mvprintw(popup_pos.y+1, popup_pos.x, "│Pegue itens no chão com [g].│");
+				mvprintw(popup_pos.y+2, popup_pos.x, "╰────────────────────────────╯");
+				
+				attroff(COLOR_PAIR(COLOR_DESC));
 			}
 
 			// Modos Especiais
@@ -381,9 +405,14 @@ void loop() {
 				cursor_mv();
 			}
 
+			sprintf(buff, "%d", ticks);
+			mvprintw(3, 50, buff);
+			sprintf(buff, "%d", turn);
+			mvprintw(4, 50, buff);
+
 			refresh();
-			napms(TICK_MS);
-			ticks += TICK_MS;
+			napms(DELAY);
+			ticks += DELAY;
 		}
 
 	} while ((input = getch()));

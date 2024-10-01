@@ -8,8 +8,8 @@
 // macro for dynamic allocation
 #define new(T) (T*)malloc(sizeof(T))
 
-#define WORLD_WIDTH  30
-#define WORLD_HEIGHT 30
+#define WORLD_WIDTH  25
+#define WORLD_HEIGHT 25
 
 #define COLOR_DEFAULT  1
 #define COLOR_DEFAULT2 2
@@ -18,7 +18,8 @@
 #define COLOR_GROUND   5
 #define COLOR_DESC     6
 
-#define SEED 32767
+#define SEED 01110111-01100001-01110010-01100100 
+#define TICK_MS 1
 
 #define NO_ARGS_MSG      "\033[30;103margv?\033[m\n"
 #define WRONG_PASSWD_MSG "\033[30;103mSenha incorreta. Não desista!\033[m\n"
@@ -65,7 +66,7 @@ enum Signal {
 enum Gamemode {
 	NORMAL,
 	LOOK,
-	INTERACTIVE_POPUP,
+	INTERACTION,
 	ATTACK,
 	SLEEP,
 };
@@ -85,35 +86,38 @@ Entity* player;
 Tile** map;
 Point cursorpos;
 Point popup_pos = {0, 0};
-char name[32] = "você ";
+char name[32] = "você";
 enum Menu menu = SHORTCUTS;
 enum Gamemode mode = NORMAL;
 
 // Map
 const char map_sketch[WORLD_HEIGHT][WORLD_WIDTH+1] = {
-	"#############################",
-	"#............................#",
-	"#....#####################...#",
-	"#....#..#.%..............#...#",
-	"#....#..#.#..............#...#",
-	"#....#..#.#..............#...#",
-	"#....#..#%#..............#...#",
-	"#....#....#######.....####...#",
-	"#....#f....=.............#...#",
-	"#....#######...######-####...#",
-	"#....##.#......=..#.....#....#",
-	"#....##........#.n#.....#....#",
-	"#....#######...####.....#....#",
-	"#....#<.#..|...|..########...#",
-	"#....#..|..#...#..|..#####...#",
-	"#....#######...####..%%%##...#",
-	"#....#####################...#",
-	"#.........#.......#..........#",
-	"#........#.##...##.#.........#",
-	"#........#....n....#.........#",
-	"#........##.......##.........#",
-	"#.........##.#.#.##..........#",
-	"#..........###.###...........#",
+	"#########################",
+	"#.......................#",
+	"#.####%################.#",
+	"#.#..#.=..............#.#",
+	"#.#..#.#..............#.#",
+	"#.#..#.#..............#.#",
+	"#.#..#n#..............#.#",
+	"#.#..#########.....####.#",
+	"#.#.....=.............#.#",
+	"#.#######...######-####.#",
+	"#.##.#......=..#.....#..#",
+	"#.##........#.n#.....#..#",
+	"#.#######...####.....#..#",
+	"#.#<.#..|...|..########.#",
+	"#.#..|..#...#..|..#####.#",
+	"#.#######...####..%%%##.#",
+	"#.#####################.#",
+	"#.....##.......##.......#",
+	"#.....#.##...##.#.......#",
+	"#.....#....n....#.......#",
+	"#.....##.......##.......#",
+	"#......##.#.#.##........#",
+	"#.......###.###.........#",
+	"#.......................#",
+	"#########################",
+
 
 };
 
@@ -146,17 +150,18 @@ const char cheatsheet[][70] = {
 // Tiles                      id         ch    color                       wlkb    seen    visib  desc
 const Tile wall     = (Tile){ WALL     , ' ' , COLOR_PAIR(COLOR_WALL)    , false , false , false, "Parede" };
 const Tile fakewall = (Tile){ WALL     , ' ' , COLOR_PAIR(COLOR_WALL)    , true  , false , false, "Parede?" };
-const Tile ground   = (Tile){ GROUND   , '.' , COLOR_PAIR(COLOR_DEFAULT) , true  , false , false, "O chão" };
+const Tile ground   = (Tile){ GROUND   , '.' , COLOR_PAIR(COLOR_GROUND) , true  , false , false, "O chão" };
 const Tile hdoor    = (Tile){ HDOOR    , '-' , COLOR_PAIR(COLOR_DEFAULT) , false , false , false, "Uma porta. Parece destrancada" };
 const Tile vdoor    = (Tile){ VDOOR    , '|' , COLOR_PAIR(COLOR_DEFAULT) , false , false , false, "Uma porta. Parece destrancada" };
 const Tile lockdoor = (Tile){ LOCKDOOR , '=' , COLOR_PAIR(COLOR_DEFAULT) , false , false , false, "Uma porta. Há uma fechadura nela"}; 
 
 
-const Tile blanktile = (Tile){BLANK, '!', COLOR_PAIR(COLOR_DEFAULT), true, false, false, ""};
+const Tile blanktile = (Tile){BLANK, '!', COLOR_PAIR(COLOR_DEFAULT), true, false, false, "BLANKTILE"};
 
 // Fns
-void player_mv(int, int);
+bool player_mv(int, int);
 void player_closedoor();
+void cursor_mv();
 void menu_chsheet();
 
 Tile** worldgen() {
@@ -176,12 +181,18 @@ Tile** worldgen() {
 				break;
 			case '.':
 				map[y][x] = ground;
+				map[y][x].ch = rand ( ) % 5 == 0 ? '"' : ' ' ;
+				
 				break;
 			case '-':
 				map[y][x] = hdoor;
 				break;
 			case '|':
 				map[y][x] = vdoor;
+				break;
+			case '=':
+				map[y][x] = lockdoor;
+				break;
 			default:
 				map[y][x] = blanktile;
 			}
@@ -199,9 +210,11 @@ enum Signal controls(int input) {
 	if (input == 'q') {
 		switch (mode) {
 		case NORMAL:
+			attron(COLOR_PAIR(COLOR_DESC));
 			mvprintw(popup_pos.y+0, popup_pos.x, "╭────────────────────────────────╮");
 			mvprintw(popup_pos.y+1, popup_pos.x, "│O jogo não é salvo. Sair? (s/n).│");
 			mvprintw(popup_pos.y+2, popup_pos.x, "╰────────────────────────────────╯");
+			attroff(COLOR_PAIR(COLOR_DESC));
 
 			input = getch(); if (input >= 65 && input < 91) input += 32;
 			if (input == 's' || input == 'y') return BREAK;
@@ -243,11 +256,19 @@ enum Signal controls(int input) {
 	if (mode == NORMAL) {
 		switch (input) {
 		
-		case KEY_UP:    player_mv(0, -1); break;
-		case KEY_DOWN:  player_mv(0, 1);  break;
-		case KEY_LEFT:  player_mv(-1, 0); break;
-		case KEY_RIGHT: player_mv(1, 0);  break;
-		
+		case KEY_UP:
+			if (!player_mv(0, -1)) return NONE;
+			break;
+		case KEY_DOWN:
+			if (!player_mv(0, 1)) return NONE;
+			break;
+		case KEY_LEFT:
+			if (!player_mv(-1, 0)) return NONE;
+			break;
+		case KEY_RIGHT:
+			if (!player_mv(1, 0)) return NONE;
+			break;
+			
 		case 'c':
 			player_closedoor();
 			
@@ -277,10 +298,11 @@ void init() {
 	// Ncurses - Cor
 	start_color();           // Inicia a compatibilidade com cores
 	init_pair(COLOR_DEFAULT, COLOR_WHITE, COLOR_BLACK);
-	init_pair(COLOR_DEFAULT2, COLOR_RED, COLOR_BLACK);
+	init_pair(COLOR_DEFAULT2, COLOR_YELLOW, COLOR_BLACK);
 	init_pair(COLOR_UNSEEN, COLOR_BLUE, COLOR_BLACK);
 	init_pair(COLOR_WALL, COLOR_BLACK, COLOR_CYAN);
-	init_pair(COLOR_GROUND, COLOR_WHITE, COLOR_BLACK);
+	init_pair(COLOR_GROUND, COLOR_MAGENTA, COLOR_BLACK);
+	init_pair(COLOR_DESC, COLOR_BLACK, COLOR_GREEN);
 	
 	// Player
 	player = new(Entity);
@@ -293,7 +315,7 @@ void init() {
 }
 
 void loop() {
-	int input = ' ', turn = 0;
+	int input = ' ', turn = 0, ticks = 0;
 	enum Signal signal;
 	bool l_pressed = false;
 
@@ -312,47 +334,56 @@ void loop() {
 
 			if (player->pos.y > 12) popup_pos.y = 0;
 			else                    popup_pos.y = 15;
+
+			if (ticks % 100 == 0) player->color = player->color == COLOR_PAIR(COLOR_DEFAULT) ? 1 : 2;
 		}
 		
 		/* Draw */ {
 			erase();
 
+			// Menus
+			menu_chsheet();
+
 			// Mapa
 			for (int y = 0; y < WORLD_HEIGHT; y++) {
 				for (int x = 0; x < WORLD_WIDTH; x++) {
-
 					mvaddch(y, x, map[y][x].ch | map[y][x].color);
-					
 				}
 			}
 
-			menu_chsheet();
 
 			mvaddch(player->pos.y, player->pos.x, player->ch);
 			
 			if (turn <= 10) {
-				printw("você ");
+				attron(COLOR_PAIR(COLOR_DESC));
 
+				mvaddch(player->pos.y, player->pos.x+1, '<');
+				printw(name);
+				addch(' ');
+				
 				mvprintw(popup_pos.y+0, popup_pos.x, "╭─────────────────────╮");
 				mvprintw(popup_pos.y+1, popup_pos.x, "│Mova-se com as setas.│");
 				mvprintw(popup_pos.y+2, popup_pos.x, "╰─────────────────────╯");
+
+				attroff(COLOR_PAIR(COLOR_DESC));
 			} else if (!l_pressed) {
+				attron(COLOR_PAIR(COLOR_DESC));
+				
 				mvprintw(popup_pos.y+0, popup_pos.x, "╭─────────────────────────────╮");
 				mvprintw(popup_pos.y+1, popup_pos.x, "│Examine os arredores com [l].│");
 				mvprintw(popup_pos.y+2, popup_pos.x, "╰─────────────────────────────╯");
-			}
-
-			// Modos Especiais
-			if (mode == LOOK) {
-				attron(COLOR_PAIR(COLOR_DESC));
-				mvaddch(cursorpos.y, cursorpos.x, '<');
-				if (cursorpos.x < WORLD_WIDTH && cursorpos.y < WORLD_HEIGHT) printw(map[cursorpos.y][cursorpos.x].desc);
 				
 				attroff(COLOR_PAIR(COLOR_DESC));
 			}
 
+			// Modos Especiais
+			if (mode == LOOK) {
+				cursor_mv();
+			}
+
 			refresh();
-			napms(1);
+			napms(TICK_MS);
+			ticks += TICK_MS;
 		}
 
 	} while ((input = getch()));
@@ -367,7 +398,17 @@ void close() {
 	free(map);	
 }
 
-// --- MENUS-----------------------------------------
+// --- MENUS ETC ------------------------------------
+
+void cursor_mv() {
+	attron(COLOR_PAIR(COLOR_DESC));
+	
+	mvaddch(cursorpos.y, cursorpos.x+1, '<');
+	if (cursorpos.x >= 0 && cursorpos.y >= 0 && cursorpos.x < WORLD_WIDTH && cursorpos.y < WORLD_HEIGHT) printw(map[cursorpos.y][cursorpos.x].desc);
+	addch(' ');
+	
+	attroff(COLOR_PAIR(COLOR_DESC));
+}
 
 void menu_chsheet(int offset_x, int offset_y) {
 
@@ -380,12 +421,14 @@ void menu_chsheet(int offset_x, int offset_y) {
 
 // --- PLAYER ---------------------------------------
 
-void player_mv(int x, int y) {
+bool player_mv(int x, int y) {
 	Tile tile = map[player->pos.y + y][player->pos.x + x];
 
 	if (tile.walkable) {
 		player->pos.x += x;
 		player->pos.y += y;
+
+		return true;
 	} else if (tile.id == HDOOR) {
 		map[player->pos.y + y][player->pos.x + x].walkable = true;
 		map[player->pos.y + y][player->pos.x + x].ch = '\'';
@@ -393,6 +436,8 @@ void player_mv(int x, int y) {
 		map[player->pos.y + y][player->pos.x + x].walkable = true;
 		map[player->pos.y + y][player->pos.x + x].ch = '`';
 	}
+
+	return false;
 }
 
 void player_closedoor() {
@@ -425,6 +470,9 @@ void player_closedoor() {
 
 int main(int argc, char *argv[]) {
 	// Calls
+	if (argc > 2 && strlen(argv[2]) < 32) {
+		strcpy(name, argv[2]);	
+	}
 	if (argc > 1 && !strcmp(argv[1], "ward")) {
 		init();
 		loop();

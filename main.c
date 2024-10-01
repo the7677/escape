@@ -16,10 +16,11 @@
 #define COLOR_UNSEEN   3
 #define COLOR_WALL     4
 #define COLOR_GROUND   5
-#define COLOR_DESC     6
+#define COLOR_DOOR     6
+#define COLOR_DESC     7
 
 #define SEED 01110111-01100001-01110010-01100100 
-#define DELAY 10
+#define DELAY_MS 10
 
 #define NO_ARGS_MSG      "\033[30;103margv?\033[m\n"
 #define WRONG_PASSWD_MSG "\033[30;103mSenha incorreta. Não desista!\033[m\n"
@@ -35,8 +36,9 @@ typedef struct {
 	Point pos;
 	char ch;
 	int color;
+	int style;
 } Entity;
-
+	
 enum TileID {
 	WALL,
 	GROUND,
@@ -50,6 +52,7 @@ typedef struct {
 	enum TileID id;
 	char ch;
 	int color;
+	int style;
 	bool walkable;
 	bool seen;
 	bool visible;
@@ -65,6 +68,7 @@ enum Signal {
 
 enum Gamemode {
 	NORMAL,
+	PAUSED,
 	LOOK,
 	INTERACTION,
 	ATTACK,
@@ -94,43 +98,43 @@ enum Gamemode mode = NORMAL;
 // Map
 const char map1_sketch[WORLD_HEIGHT][WORLD_WIDTH+1] = {
 	"#########################",
-	"#.......................#",
-	"#.####%################.#",
-	"#.#..#.=..............#.#",
-	"#.#..#.#..............#.#",
-	"#.#..#.#..............#.#",
-	"#.#..#n#..............#.#",
+	"###....................##",
+	"###i.#%###############..#",
+	"######.=.#o.o.......i#..#",
+	"###..#.#.............#..#",
+	"###..#.#.............#..#",
+	"#.#..#n#.............#..#",
 	"#.#..#########.....####.#",
 	"#.#.....=.............#.#",
 	"#.#######...######-####.#",
-	"#.##.#......=..#.....#..#",
-	"#.##........#.n#.....#..#",
-	"#.#######...####.....#..#",
-	"#.#<.#..|...|..########.#",
-	"#.#..|..#...#..|..#####.#",
-	"#.#######...####..%%%##.#",
-	"#.##################%##.#",
-	"#.....##.......##.......#",
-	"#.....#.##...##.#.......#",
-	"#.....#....n....#.......#",
-	"#.....##.......##.......#",
-	"#......##.#.#.##........#",
-	"#.......###.###.........#",
-	"#.......................#",
+	"#.#.##......=..#.....#..#",
+	"#.#.........#.n#..S..#%##",
+	"#.#######...####.....#%%#",
+	"#.#<.#..-...-..########=#",
+	"#....=..#...#..-..#%%%#%#",
+	"#.#######...####..%%#%#%#",
+	"#.###...#############%#%#",
+	"#......##.......##%%%%#%#",
+	"#......#.##...##.##%###%#",
+	"#......#....n....%%%%%%%#",
+	"#......##.......######%##",
+	"#.......##.#.#.####%%%%##",
+	"##.......#######%%###%#%#",
+	"#####....%%%%%%%%%%%%%%%#",
 	"#########################",
 
 
 };
 
 const char cheatsheet[][70] = {
-	"╭──╯ ╰────────────────╮",
+	"╭─╯ ╰─────────────────╮",
 	"│tecla  info          │",
 	"│                     │",
 	"│q      voltar/sair   │",
 	"│l      examinar      │",
 	"│c      abrir porta   │",
-	"│                     │",
-	"│                     │",
+	"│g      pegar item    │",
+	"│space  interagir     │",
 	"│                     │",
 	"│                     │",
 	"│                     │",
@@ -144,35 +148,36 @@ const char cheatsheet[][70] = {
 	"│                     │",
 	"│                     │",
 	"│<      subir escada  │",
-	"│>      descer escad  │",
+	"│>      descer escada │",
 	"╰─────────────────────╯",
 };
 
-// Tiles                      id         ch    color                       wlkb    seen    visib  desc
-const Tile wall     = (Tile){ WALL     , ' ' , COLOR_PAIR(COLOR_WALL)    , false , false , false, "Parede" };
-const Tile fakewall = (Tile){ WALL     , ' ' , COLOR_PAIR(COLOR_WALL)    , true  , false , false, "Parede?" };
-const Tile ground   = (Tile){ GROUND   , '.' , COLOR_PAIR(COLOR_GROUND) , true  , false , false, "O chão" };
-const Tile hdoor    = (Tile){ HDOOR    , '-' , COLOR_PAIR(COLOR_DEFAULT) , false , false , false, "Uma porta. Parece destrancada" };
-const Tile vdoor    = (Tile){ VDOOR    , '|' , COLOR_PAIR(COLOR_DEFAULT) , false , false , false, "Uma porta. Parece destrancada" };
-const Tile lockdoor = (Tile){ LOCKDOOR , '#' , COLOR_PAIR(COLOR_DEFAULT) , false , false , false, "Uma porta. Há uma fechadura nela"}; 
+// Tiles                      id         ch    color                     style      wlkb    seen    visib   desc
+const Tile wall     = (Tile){ WALL     , ' ' , COLOR_PAIR(COLOR_WALL)  , A_NORMAL , false , false , false , "Parede" };
+const Tile fakewall = (Tile){ WALL     , ' ' , COLOR_PAIR(COLOR_WALL)  , A_NORMAL , true  , false , false , "Parede?" };
+const Tile ground   = (Tile){ GROUND   , '.' , COLOR_PAIR(COLOR_GROUND), A_NORMAL , true  , false , false , "O chão" };
+const Tile hdoor    = (Tile){ HDOOR    , '-' , COLOR_PAIR(COLOR_DOOR)  , A_NORMAL , false , false , false , "Uma porta. Parece destrancada" };
+const Tile vdoor    = (Tile){ VDOOR    , '|' , COLOR_PAIR(COLOR_DOOR)  , A_NORMAL , false , false , false , "Uma porta. Parece destrancada" };
+const Tile lockdoor = (Tile){ LOCKDOOR , '#' , COLOR_PAIR(COLOR_WALL)  , A_NORMAL , false , false , false , "Uma porta. Há uma fechadura nela"}; 
 
 
-const Tile blanktile = (Tile){BLANK, '!', COLOR_PAIR(COLOR_DEFAULT), true, false, false, "BLANKTILE"};
+const Tile blanktile = (Tile){BLANK, '!', COLOR_PAIR(COLOR_DEFAULT), A_BOLD, true, false, false, "BLANKTILE"};
 
 // Fns
 bool player_mv(int, int);
 void player_closedoor();
 void cursor_mv();
-void menu_chsheet();
+void menu_chsheet(int, int);
+enum TileID door_axis(int ,int);
 
 Tile** worldgen() {
-	Tile** map = (Tile**)malloc(WORLD_HEIGHT * sizeof(Tile*));                                  // Aloca espaço para 10 linhas
-    for (int i = 0; i < WORLD_HEIGHT; i++) map[i] = (Tile*)malloc((WORLD_WIDTH+1) * sizeof(Tile)); // Aloca espaço para 21 colunas
+	Tile** map = (Tile**)malloc(WORLD_HEIGHT * sizeof(Tile*));                                     // Aloca 10 linhas
+    for (int i = 0; i < WORLD_HEIGHT; i++) map[i] = (Tile*)malloc((WORLD_WIDTH+1) * sizeof(Tile)); // Aloca 21 colunas
 	
 	for (int y = 0; y < WORLD_HEIGHT; y++) {
 		for (int x = 0; x < WORLD_WIDTH; x++) {
 			char ch = map1_sketch[y][x];
-			
+
 			switch (ch) {
 			case '#':
 				map[y][x] = wall;
@@ -182,13 +187,16 @@ Tile** worldgen() {
 				break;
 			case '.':
 				map[y][x] = ground;
-				map[y][x].ch = rand ( ) % 5 == 0 ? '"' : ' ' ;
+				map[y][x].ch = rand() % 5 == 0 ? '"' : ' ';
+				map[y][x].style = rand() % 2 == 0 ? A_DIM : A_NORMAL;
 				
 				break;
 			case '-':
-				map[y][x] = hdoor;
-				break;
-			case '|':
+				if (map[y][x-1].id == WALL){
+					map[y][x] = hdoor;
+					break;
+				}
+
 				map[y][x] = vdoor;
 				break;
 			case '=':
@@ -204,6 +212,14 @@ Tile** worldgen() {
 	return map;
 }
 
+void draw_map(int offset_x, int offset_y) {
+	for (int y = 0; y < WORLD_HEIGHT; y++) {
+		for (int x = 0; x < WORLD_WIDTH; x++) {
+			mvaddch(offset_y + y, offset_x + x, map[y][x].ch | map[y][x].color | map[y][x].style);
+		}
+	}			
+}
+
 enum Signal controls(int input) {
 	while (getch() != ERR) {} // Limpa o getch()
 	if (input == ERR) {
@@ -215,6 +231,8 @@ enum Signal controls(int input) {
 	if (input == 'q') {
 		switch (mode) {
 		case NORMAL:
+			mode = PAUSED;
+		case PAUSED:
 			attron(COLOR_PAIR(COLOR_DESC));
 			
 			mvprintw(popup_pos.y+0, popup_pos.x, "╭────────────────────────────────╮");
@@ -223,10 +241,15 @@ enum Signal controls(int input) {
 			
 			attroff(COLOR_PAIR(COLOR_DESC));
 
-			input = getch();
-			if (input >= 65 && input < 91) input += 32;
-			if (input == 's' || input == 'y') return BREAK;
-			return CONTINUE;
+			while ((input = getch())) {
+				if (input >= 65 && input < 91) input += 32;
+				if (input == 's' || input == 'y') return BREAK;
+				else if (input != ERR) {
+					mode = NORMAL;
+					return NONE;	
+				}
+			}
+			
 			return NONE;
 		case LOOK:
 			mode = NORMAL;
@@ -280,10 +303,10 @@ enum Signal controls(int input) {
 			
 		case 'c':
 			player_closedoor();
-			
 			break;
 		
-		default: break;
+		default:
+		
 		}
 	}
 
@@ -312,6 +335,7 @@ void init() {
 	init_pair(COLOR_UNSEEN, COLOR_BLUE, COLOR_BLACK);
 	init_pair(COLOR_WALL, COLOR_BLACK, COLOR_CYAN);
 	init_pair(COLOR_GROUND, COLOR_MAGENTA, COLOR_BLACK);
+	init_pair(COLOR_DOOR, COLOR_YELLOW, COLOR_BLACK);
 	init_pair(COLOR_DESC, COLOR_BLACK, COLOR_GREEN);
 
 	// Mapa
@@ -321,7 +345,8 @@ void init() {
 	player->pos = (Point){7, 6};
 	player->ch = '@';
 	player->color = COLOR_PAIR(COLOR_DEFAULT);
-
+	player->style = A_NORMAL;
+	
 	// Mapa
 	map = worldgen();
 }
@@ -335,7 +360,6 @@ void loop() {
 		if (input >= 65 && input < 91) input += 32; // converte input para minúsculo
 
 		/* Controls */ {
-			if (input == 'l') l_pressed = true;	
 			if (input == 'g') g_pressed = true;	
 			signal = controls(input);
 						
@@ -343,6 +367,7 @@ void loop() {
 		
 		/* Update */ {
 			if (signal & BREAK) break;
+			if (signal & CONTINUE) continue;
 			if (signal & NEXT_TURN) {
 				turn++;
 			}
@@ -350,27 +375,27 @@ void loop() {
 			if (player->pos.y > 9) popup_pos.y = 0;
 			else                   popup_pos.y = 16;
 
-			if (ticks % 400 == 0) player->color = player->color == COLOR_PAIR(COLOR_DEFAULT) ? COLOR_PAIR(COLOR_DEFAULT2) : COLOR_PAIR(COLOR_DEFAULT);
+			if (ticks % 400 == 0) {
+				player->style = player->style == A_NORMAL ? A_BOLD : A_NORMAL;
+			}
 		}
 		
 		/* Draw */ {
 			erase();
 
 			// Menus
-			menu_chsheet();
+			mvprintw(0, 26, "╭I┬S┬!┬?╮");
+			menu_chsheet(26, 1);
 
 			// Mapa
-			for (int y = 0; y < WORLD_HEIGHT; y++) {
-				for (int x = 0; x < WORLD_WIDTH; x++) {
-					mvaddch(y, x, map[y][x].ch | map[y][x].color);
-				}
-			}
+			draw_map(0, 0);
 
-
-			mvaddch(player->pos.y, player->pos.x, player->ch | player->color);
+			mvaddch(player->pos.y, player->pos.x, player->ch | player->color | player->style);
 
 			// Tutorial
 			if (turn <= 10 && mode == NORMAL) {
+				if (input == 'l') l_pressed = true;	
+
 				attron(COLOR_PAIR(COLOR_DESC));
 
 				mvaddch(player->pos.y, player->pos.x+1, '<');
@@ -383,6 +408,8 @@ void loop() {
 
 				attroff(COLOR_PAIR(COLOR_DESC));
 			} else if (!l_pressed) {
+				if (input == 'l') l_pressed = true;	
+
 				attron(COLOR_PAIR(COLOR_DESC));
 				
 				mvprintw(popup_pos.y+0, popup_pos.x, "╭─────────────────────────────╮");
@@ -391,6 +418,8 @@ void loop() {
 				
 				attroff(COLOR_PAIR(COLOR_DESC));
 			} else if (!g_pressed && mode == NORMAL) {
+					if (input == 'g') g_pressed = true;	
+
 				attron(COLOR_PAIR(COLOR_DESC));
 								
 				mvprintw(popup_pos.y+0, popup_pos.x, "╭────────────────────────────╮");
@@ -405,14 +434,14 @@ void loop() {
 				cursor_mv();
 			}
 
-			sprintf(buff, "%d", ticks);
+			sprintf(buff, "%d", ticks / 1000);
 			mvprintw(3, 50, buff);
 			sprintf(buff, "%d", turn);
 			mvprintw(4, 50, buff);
 
 			refresh();
-			napms(DELAY);
-			ticks += DELAY;
+			napms(DELAY_MS);
+			ticks += DELAY_MS;
 		}
 
 	} while ((input = getch()));
@@ -444,7 +473,6 @@ void menu_chsheet(int offset_x, int offset_y) {
 	for (int y = 0; y < 23; y++) {
 		mvprintw(y + offset_y, offset_x, cheatsheet[y]);	
 	}
-
 	
 }
 
@@ -458,14 +486,11 @@ bool player_mv(int x, int y) {
 		player->pos.y += y;
 
 		return true;
-	} else if (tile.id == HDOOR) {
+	} else if (tile.id == HDOOR || tile.id == VDOOR) {
 		map[player->pos.y + y][player->pos.x + x].walkable = true;
 		map[player->pos.y + y][player->pos.x + x].ch = '\'';
-	} else if (tile.id == VDOOR) {
-		map[player->pos.y + y][player->pos.x + x].walkable = true;
-		map[player->pos.y + y][player->pos.x + x].ch = '`';
 	}
-
+	
 	return false;
 }
 
@@ -474,7 +499,7 @@ void player_closedoor() {
 				
 	for (int i = -1; i <= 1; i++) {
 		for (int j = -1; j <= 1; j++) {
-			if( i == 0 && j == 0) continue; // evita fechamento da porta no tile do player
+			if( i == 0 && j == 0) continue;
 
 			x = player->pos.x + i;
 			y = player->pos.y + j;

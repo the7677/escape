@@ -1,23 +1,26 @@
+#include <ncurses.h>
+
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
-#include<locale.h>
-#include <ncurses.h>
-
+#include <math.h>
+#include <locale.h>
 
 // macro for dynamic allocation
-#define new(T) (T*)malloc(sizeof(T))
+#define new(T)  (T*)malloc(sizeof(T))
+#define rads(x) (x * (PI/180))
 
-#define WORLD_WIDTH  25
-#define WORLD_HEIGHT 25
+#define WORLD_WIDTH  50
+#define WORLD_HEIGHT 30
 
-#define COLOR_DEFAULT  1
-#define COLOR_DEFAULT2 2
-#define COLOR_UNSEEN   3
-#define COLOR_WALL     4
-#define COLOR_GROUND   5
-#define COLOR_DOOR     6
-#define COLOR_DESC     7
+#define COLOR_DEFAULT    1
+#define COLOR_DEFAULT2   2
+#define COLOR_UNSEEN     3
+#define COLOR_UNSEENWALL 4
+#define COLOR_WALL       5
+#define COLOR_GROUND     6
+#define COLOR_DOOR       7
+#define COLOR_DESC       8
 
 #define SEED 01110111-01100001-01110010-01100100 
 #define DELAY_MS 10
@@ -35,8 +38,8 @@ typedef struct {
 typedef struct {
 	Point pos;
 	char ch;
-	int color;
-	int style;
+	unsigned color;
+	unsigned style;
 } Entity;
 	
 enum TileID {
@@ -51,8 +54,8 @@ enum TileID {
 typedef struct {
 	enum TileID id;
 	char ch;
-	int color;
-	int style;
+	unsigned color;
+	unsigned style;
 	bool walkable;
 	bool seen;
 	bool visible;
@@ -83,7 +86,7 @@ enum Menu {
 };
 
 // Consts
-const long double PI = 3.14159265359;
+const long double PI = 3.141592653589;
 
 // Vars
 Entity* player;
@@ -96,34 +99,38 @@ enum Menu menu = SHORTCUTS;
 enum Gamemode mode = NORMAL;
 
 // Map
-const char map1_sketch[WORLD_HEIGHT][WORLD_WIDTH+1] = {
-	"#########################",
-	"###....................##",
-	"###i.#%###############..#",
-	"######.=.#o.o.......i#..#",
-	"###..#.#.............#..#",
-	"###..#.#.............#..#",
-	"#.#..#n#.............#..#",
-	"#.#..#########.....####.#",
-	"#.#.....=.............#.#",
-	"#.#######...######-####.#",
-	"#.#.##......=..#.....#..#",
-	"#.#.........#.n#..S..#%##",
-	"#.#######...####.....#%%#",
-	"#.#<.#..-...-..########=#",
-	"#....=..#...#..-..#%%%#%#",
-	"#.#######...####..%%#%#%#",
-	"#.###...#############%#%#",
-	"#......##.......##%%%%#%#",
-	"#......#.##...##.##%###%#",
-	"#......#....n....%%%%%%%#",
-	"#......##.......######%##",
-	"#.......##.#.#.####%%%%##",
-	"##.......#######%%###%#%#",
-	"#####....%%%%%%%%%%%%%%%#",
-	"#########################",
-
-
+// a string acaba ocupando o espaço do \0, mas não há problema, pois a const é apenas um gerador
+const char map1_sketch[WORLD_HEIGHT][WORLD_WIDTH] = {
+	"##################################################", // 
+	"###.......................###......####.......####", // 
+	"###i.#%##################..#.......#...........###", // 
+	"######.=.#c.c..........i#..#.....................#", // 
+	"###..#.#................#......................#.#", // 
+	"###..#.#................#..#.....#.............#.#", // 
+	"#.#..#n#................#..##....#............##.#", // 
+	"#.#..#########........####.#########..........##.#", // 
+	"#.#.....=................#.#....#####........###.#", // 
+	"#.#######...######-#######.#....#####........###.#", // 
+	"#.#.##......=..#.....#.....#....######.......###.#", // 
+	"#.#.........#.n#..S..#.#####....##########..###..#", // 
+	"#.#######...####.....#..#%%%%%%%#############....#", // 
+	"#.#<.#..-...-..########=#%#####%#########........#", // 
+	"#....=..#...#..-.m#%%%#%#%###%%%#######..........#", // 
+	"#.#######...####.n%%#%#%%%#####%#######.........##", // 
+	"#.###...#############%#%#%#####%#########.....####", // 
+	"#......##.......##%%%%#%#%####...#################", // 
+	"#......#.##...##.##%###%#%###S.c.S################", // 
+	"#......#....n....%%%%%%%######...#################", // 
+	"#......##.......######%########S##################", // 
+	"#.......##.#.#.####%%%%##%########################", // 
+	"##.......#######%%###%#%%%########################", // 
+	"#####....%%%%%%%%%%%%%%%#%########################", // 
+	"##################%#####%%########################", // 
+	"##################%%%%%%%#########################", // 
+	"#####################%############################", // 
+	"####################%%############################", // 
+	"################......############################", // 
+	"##################################################", // 
 };
 
 const char cheatsheet[][70] = {
@@ -155,7 +162,7 @@ const char cheatsheet[][70] = {
 // Tiles                      id         ch    color                     style      wlkb    seen    visib   desc
 const Tile wall     = (Tile){ WALL     , ' ' , COLOR_PAIR(COLOR_WALL)  , A_NORMAL , false , false , false , "Parede" };
 const Tile fakewall = (Tile){ WALL     , ' ' , COLOR_PAIR(COLOR_WALL)  , A_NORMAL , true  , false , false , "Parede?" };
-const Tile ground   = (Tile){ GROUND   , '.' , COLOR_PAIR(COLOR_GROUND), A_NORMAL , true  , false , false , "O chão" };
+const Tile ground   = (Tile){ GROUND   , '.' , COLOR_PAIR(COLOR_GROUND), A_NORMAL , true  , false , false , "Carpete" };
 const Tile hdoor    = (Tile){ HDOOR    , '-' , COLOR_PAIR(COLOR_DOOR)  , A_NORMAL , false , false , false , "Uma porta. Parece destrancada" };
 const Tile vdoor    = (Tile){ VDOOR    , '|' , COLOR_PAIR(COLOR_DOOR)  , A_NORMAL , false , false , false , "Uma porta. Parece destrancada" };
 const Tile lockdoor = (Tile){ LOCKDOOR , '#' , COLOR_PAIR(COLOR_WALL)  , A_NORMAL , false , false , false , "Uma porta. Há uma fechadura nela"}; 
@@ -164,68 +171,19 @@ const Tile lockdoor = (Tile){ LOCKDOOR , '#' , COLOR_PAIR(COLOR_WALL)  , A_NORMA
 const Tile blanktile = (Tile){BLANK, '!', COLOR_PAIR(COLOR_DEFAULT), A_BOLD, true, false, false, "BLANKTILE"};
 
 // Fns
+Tile** worldgen();
+void draw_map(int, int);
 bool player_mv(int, int);
 void player_closedoor();
 void cursor_mv();
 void menu_chsheet(int, int);
 enum TileID door_axis(int ,int);
 
-Tile** worldgen() {
-	Tile** map = (Tile**)malloc(WORLD_HEIGHT * sizeof(Tile*));                                     // Aloca 10 linhas
-    for (int i = 0; i < WORLD_HEIGHT; i++) map[i] = (Tile*)malloc((WORLD_WIDTH+1) * sizeof(Tile)); // Aloca 21 colunas
-	
-	for (int y = 0; y < WORLD_HEIGHT; y++) {
-		for (int x = 0; x < WORLD_WIDTH; x++) {
-			char ch = map1_sketch[y][x];
-
-			switch (ch) {
-			case '#':
-				map[y][x] = wall;
-				break;
-			case '%':
-				map[y][x] = fakewall;
-				break;
-			case '.':
-				map[y][x] = ground;
-				map[y][x].ch = rand() % 5 == 0 ? '"' : ' ';
-				map[y][x].style = rand() % 2 == 0 ? A_DIM : A_NORMAL;
-				
-				break;
-			case '-':
-				if (map[y][x-1].id == WALL){
-					map[y][x] = hdoor;
-					break;
-				}
-
-				map[y][x] = vdoor;
-				break;
-			case '=':
-				map[y][x] = lockdoor;
-				break;
-			default:
-				map[y][x] = blanktile;
-			}
-		}
-		
-	}
-	
-	return map;
-}
-
-void draw_map(int offset_x, int offset_y) {
-	for (int y = 0; y < WORLD_HEIGHT; y++) {
-		for (int x = 0; x < WORLD_WIDTH; x++) {
-			mvaddch(offset_y + y, offset_x + x, map[y][x].ch | map[y][x].color | map[y][x].style);
-		}
-	}			
-}
 
 enum Signal controls(int input) {
 	while (getch() != ERR) {} // Limpa o getch()
-	if (input == ERR) {
-		return NONE;
-	}
-	
+
+	if (input == ERR) return NONE;
 
 	// Voltar/Sair
 	if (input == 'q') {
@@ -278,13 +236,14 @@ enum Signal controls(int input) {
 		case KEY_LEFT:  cursorpos.x--; break;
 		case KEY_RIGHT: cursorpos.x++; break;
 		
-		default: break;
+		default:
+
 		}
 		return NONE;
 	}
 	
 	
-	// Player Actions
+	// Controles do Player
 	if (mode == NORMAL) {
 		switch (input) {
 		
@@ -303,14 +262,13 @@ enum Signal controls(int input) {
 			
 		case 'c':
 			player_closedoor();
-			break;
-		
+			return NONE;
 		default:
 		
 		}
 	}
 
-	// Se não houver retorno precoce, a função emitirá um sinal para continuar o turno.
+	// Se não houver retorno precoce, a função emitirá um sinal para incrementar o turno.
 	return NEXT_TURN;
 }
 
@@ -330,13 +288,16 @@ void init() {
 
 	// Ncurses - Cor
 	start_color();           // Inicia a compatibilidade com cores
-	init_pair(COLOR_DEFAULT, COLOR_WHITE, COLOR_BLACK);
-	init_pair(COLOR_DEFAULT2, COLOR_YELLOW, COLOR_BLACK);
-	init_pair(COLOR_UNSEEN, COLOR_BLUE, COLOR_BLACK);
-	init_pair(COLOR_WALL, COLOR_BLACK, COLOR_CYAN);
-	init_pair(COLOR_GROUND, COLOR_MAGENTA, COLOR_BLACK);
-	init_pair(COLOR_DOOR, COLOR_YELLOW, COLOR_BLACK);
-	init_pair(COLOR_DESC, COLOR_BLACK, COLOR_GREEN);
+	
+	//        define             foreground     background
+	init_pair(COLOR_DEFAULT    , COLOR_WHITE   , COLOR_BLACK);
+	init_pair(COLOR_DEFAULT2   , COLOR_YELLOW  , COLOR_BLACK);
+	init_pair(COLOR_UNSEEN     , COLOR_BLUE    , COLOR_BLACK);
+	init_pair(COLOR_UNSEENWALL , COLOR_BLACK   , COLOR_BLUE);
+	init_pair(COLOR_WALL       , COLOR_BLACK   , COLOR_CYAN);
+	init_pair(COLOR_GROUND     , COLOR_MAGENTA , COLOR_BLACK);
+	init_pair(COLOR_DOOR       , COLOR_YELLOW  , COLOR_BLACK);
+	init_pair(COLOR_DESC       , COLOR_BLACK   , COLOR_GREEN);
 
 	// Mapa
 	
@@ -372,12 +333,32 @@ void loop() {
 				turn++;
 			}
 
+			for (int y = 0; y < WORLD_HEIGHT; y++) {
+				for (int x = 0; x < WORLD_WIDTH; x++) {
+					map[y][x].visible = false;
+				}
+			}
+
+			// Gerador de FOV
+			int vision_r = 10;
+			for (int deg = 0; deg < 360; deg++) {
+				for (int r = 0; r <= vision_r; r++) {
+					int x = (int)(cos(rads(deg))*r) + player->pos.x,
+						y = (int)(sin(rads(deg))*r) + player->pos.y;
+
+					if (x < 0 || x >= WORLD_WIDTH || y < 0 || y >= WORLD_HEIGHT) continue;
+					
+					map[y][x].visible = true;
+					map[y][x].seen = true;
+
+					if (map[y][x].id == WALL) break;
+				} 
+			}
+
 			if (player->pos.y > 9) popup_pos.y = 0;
 			else                   popup_pos.y = 16;
 
-			if (ticks % 400 == 0) {
-				player->style = player->style == A_NORMAL ? A_BOLD : A_NORMAL;
-			}
+			if (ticks % 400 == 0) player->style = player->style == A_NORMAL ? A_BOLD : A_NORMAL;
 		}
 		
 		/* Draw */ {
@@ -418,7 +399,7 @@ void loop() {
 				
 				attroff(COLOR_PAIR(COLOR_DESC));
 			} else if (!g_pressed && mode == NORMAL) {
-					if (input == 'g') g_pressed = true;	
+				if (input == 'g') g_pressed = true;	
 
 				attron(COLOR_PAIR(COLOR_DESC));
 								
@@ -474,6 +455,95 @@ void menu_chsheet(int offset_x, int offset_y) {
 		mvprintw(y + offset_y, offset_x, cheatsheet[y]);	
 	}
 	
+}
+
+// --- MUNDO ----------------------------------------
+
+Tile** worldgen() {
+	Tile** map = (Tile**)malloc(WORLD_HEIGHT * sizeof(Tile*));                                     // Aloca 10 linhas
+    for (int i = 0; i < WORLD_HEIGHT; i++) map[i] = (Tile*)malloc((WORLD_WIDTH+1) * sizeof(Tile)); // Aloca 21 colunas
+	
+	for (int y = 0; y < WORLD_HEIGHT; y++) {
+		for (int x = 0; x < WORLD_WIDTH; x++) {
+			char ch = map1_sketch[y][x];
+			
+			map[y][x].seen = false;
+
+			switch (ch) {
+			case '#':
+				map[y][x] = wall;
+				break;
+			case '%':
+				map[y][x] = fakewall;
+				break;
+			case '.':
+				map[y][x] = ground;
+				map[y][x].ch = rand() % 5 == 0 ? '"' : ' ';
+				map[y][x].style = rand() % 2 == 0 ? A_DIM : A_NORMAL;
+				
+				break;
+			case '-':
+				if (map[y][x-1].id == WALL){
+					map[y][x] = hdoor;
+					break;
+				}
+
+				map[y][x] = vdoor;
+				break;
+			case '=':
+				map[y][x] = lockdoor;
+				break;
+			default:
+				map[y][x] = blanktile;
+			}
+		}
+		
+	}
+	
+	return map;
+}
+
+void draw_map(int offset_x, int offset_y) {
+	for (int y = 0; y < WORLD_HEIGHT; y++) {
+		for (int x = 0; x < WORLD_WIDTH; x++) {
+			if(!map[y][x].seen) continue;
+			
+			if (map[y][x].id == WALL) {
+				mvaddch(
+					offset_y + y,
+					offset_x + x,
+					map[y][x].ch                                                         | // Char
+					(map[y][x].visible ? map[y][x].color : COLOR_PAIR(COLOR_UNSEENWALL)) | // Cor
+				 	(map[y][x].visible ? map[y][x].style : A_DIM)                          // Estilo
+			 	);
+			 	continue;
+			 }
+
+			mvaddch(
+				offset_y + y,
+				offset_x + x,
+				map[y][x].ch                                                     | // Char
+				(map[y][x].visible ? map[y][x].color : COLOR_PAIR(COLOR_UNSEEN)) | // Cor
+			 	(map[y][x].visible ? map[y][x].style : A_DIM)                      // Estilo
+		 	);
+		}
+	}			
+}
+
+void make_fov(int vision_radius) {
+	for (int deg = 0; deg < 360; deg++) {
+		for (int r = 0; r <= vision_radius; r++) {
+			int x = (int)(cos(rads(deg))*r) + player->pos.x,
+				y = (int)(sin(rads(deg))*r) + player->pos.y;
+
+			if (x < 0 || x >= WORLD_WIDTH || y < 0 || y >= WORLD_HEIGHT) continue;
+			
+			map[y][x].visible = true;
+			map[y][x].seen = true;
+
+			if (map[y][x].id == (WALL | HDOOR | VDOOR)) break;
+		} 
+	}
 }
 
 // --- PLAYER ---------------------------------------

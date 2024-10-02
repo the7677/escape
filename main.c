@@ -6,12 +6,12 @@
 #include <math.h>
 #include <locale.h>
 
-// macro for dynamic allocation
-#define new(T)  (T*)malloc(sizeof(T))
-#define rads(x) (x * (PI/180))
+#define PI 3.141592653589
 
 #define WORLD_WIDTH  50
 #define WORLD_HEIGHT 30
+
+#define GRP_SIZE 64
 
 #define COLOR_DEFAULT    1
 #define COLOR_DEFAULT2   2
@@ -28,6 +28,12 @@
 #define NO_ARGS_MSG      "\033[30;103margv?\033[m\n"
 #define WRONG_PASSWD_MSG "\033[30;103mSenha incorreta. Não desista!\033[m\n"
 
+#define rads(x) (x * (PI/180))
+#define new(T)  (T*)malloc(sizeof(T))
+// #define append(x) for (int i = 0; i < GRP_SIZE; i++) if (item_grp[i] == NULL) { item_grp[i] = item; break; }
+#define append(g, i) for (int i = 0; i < GRP_SIZE; i++) if (g[i] == NULL) { g[i] = i; break; }
+
+
 // --- ENGINE ---------------------------------------
 
 // Enums && Structs
@@ -38,8 +44,10 @@ typedef struct {
 typedef struct {
 	Point pos;
 	char ch;
+	bool visible;
 	unsigned color;
 	unsigned style;
+	char desc[64];
 } Entity;
 	
 enum TileID {
@@ -48,7 +56,10 @@ enum TileID {
 	HDOOR,
 	VDOOR,
 	LOCKDOOR,
-	BLANK
+	UPSTAIRS,
+	DOWNSTAIRS,
+	GENERIC,
+	ERROR   
 };
 
 typedef struct {
@@ -62,10 +73,30 @@ typedef struct {
 	char desc[64];
 } Tile;
 
+enum ItemID {
+	CHEST,
+	BUTTON,
+	STATUE,
+};
+
+typedef struct {
+	enum ItemID id;
+	Point pos;
+	char ch;
+	unsigned color;
+	unsigned style;
+	bool interactable;
+	bool pickable;
+	bool seen;
+	bool visible;
+	char desc[64];
+} Item;
+
 enum Signal {
 	BREAK     = 0b00000001,
 	CONTINUE  = 0b00000010,
 	NEXT_TURN = 0b00000100,
+	
 	NONE      = 0b10000000
 };
 
@@ -85,51 +116,50 @@ enum Menu {
 	HELP,
 };
 
-// Consts
-const long double PI = 3.141592653589;
-
 // Vars
 Entity* player;
+Entity *entity_grp[GRP_SIZE];
+Item *item_grp[GRP_SIZE];
 Tile** map;
 Point cursorpos;
 Point popup_pos = {0, 0};
-char buff[64] = "";
+char buff[32] = "";
 char name[32] = "você";
 enum Menu menu = SHORTCUTS;
 enum Gamemode mode = NORMAL;
 
-// Map
+// Mapa
 // a string acaba ocupando o espaço do \0, mas não há problema, pois a const é apenas um gerador
 const char map1_sketch[WORLD_HEIGHT][WORLD_WIDTH] = {
 	"##################################################", // 
-	"###.......................###......####.......####", // 
-	"###i.#%##################..#.......#...........###", // 
-	"######.=.#c.c..........i#..#.....................#", // 
+	"#.........................###......####.......####", // 
+	"#.#i.#%##################..#.......#.......#...###", // 
+	"#.####.=.#c.c..........i#..#.....................#", // 
 	"###..#.#................#......................#.#", // 
 	"###..#.#................#..#.....#.............#.#", // 
-	"#.#..#n#................#..##....#............##.#", // 
-	"#.#..#########........####.#########..........##.#", // 
-	"#.#.....=................#.#....#####........###.#", // 
-	"#.#######...######-#######.#....#####........###.#", // 
-	"#.#.##......=..#.....#.....#....######.......###.#", // 
-	"#.#.........#.n#..S..#.#####....##########..###..#", // 
-	"#.#######...####.....#..#%%%%%%%#############....#", // 
-	"#.#<.#..-...-..########=#%#####%#########........#", // 
-	"#....=..#...#..-.m#%%%#%#%###%%%#######..........#", // 
-	"#.#######...####.n%%#%#%%%#####%#######.........##", // 
-	"#.###...#############%#%#%#####%#########.....####", // 
+	"###..#n#................#..##....#......##....##.#", // 
+	"###..#########........####.###x#####....##....##.#", // 
+	"###.....=................#.#....#####........###.#", // 
+	"#.#######...######-#######.#....#####........#n..#", // 
+	"#.#.##......x..#.....#.....#....######.......###.#", // 
+	"#.#.........#.n#..S..#.#####....##########..###.##", // 
+	"#.#######...####.....#..#%%%%%%%#########........#", // 
+	"#.#<.#..-...-..########=#%#####%#####............#", // 
+	"#....=..#...#..-.m#%%%#%#%###%%%###..............#", // 
+	"#.#######...####.n%%#%#%%%#####%###.............##", // 
+	"#.###...#############%#%#%#####%#####.S.S.S.S.####", // 
 	"#......##.......##%%%%#%#%####...#################", // 
-	"#......#.##...##.##%###%#%###S.c.S################", // 
-	"#......#....n....%%%%%%%######...#################", // 
-	"#......##.......######%########S##################", // 
-	"#.......##.#.#.####%%%%##%########################", // 
-	"##.......#######%%###%#%%%########################", // 
-	"#####....%%%%%%%%%%%%%%%#%########################", // 
-	"##################%#####%%########################", // 
-	"##################%%%%%%%#########################", // 
-	"#####################%############################", // 
-	"####################%%############################", // 
-	"################......############################", // 
+	"#......#.##...##.##%###%#%###S.c.S#####%%%%%######", // 
+	"#......#....n....#%%%%%%######...########%########", // 
+	"#......##.......######%########S######%%%%%%%#####", // 
+	"#.......##.#.#.####%%%%##%###############%########", // 
+	"##......%###%###%%###%#%%%###############%########", // 
+	"#####..#%%%%%%%%%%%%%%%%#%#############%%%########", // 
+	"##############%###%#####%%###############%%%######", // 
+	"#####...........##%%%%%%%################%########", // 
+	"####.....#....#######%###################%########", // 
+	"#####..........#####%%%################%%%%%######", // 
+	"#######.....#.........################%%###%%#####", // 
 	"##################################################", // 
 };
 
@@ -138,16 +168,15 @@ const char cheatsheet[][70] = {
 	"│tecla  info          │",
 	"│                     │",
 	"│q      voltar/sair   │",
+	"│                     │",
 	"│l      examinar      │",
+	"│                     │",
 	"│c      abrir porta   │",
+	"│                     │",
 	"│g      pegar item    │",
-	"│space  interagir     │",
 	"│                     │",
-	"│                     │",
-	"│                     │",
-	"│                     │",
-	"│                     │",
-	"│                     │",
+	"│↑↓←→   andar/        │",
+	"│         interagir   │",
 	"│                     │",
 	"│                     │",
 	"│                     │",
@@ -155,24 +184,31 @@ const char cheatsheet[][70] = {
 	"│                     │",
 	"│                     │",
 	"│<      subir escada  │",
+	"│                     │",
 	"│>      descer escada │",
 	"╰─────────────────────╯",
 };
 
 // Tiles                      id         ch    color                     style      wlkb    seen    visib   desc
 const Tile wall     = (Tile){ WALL     , ' ' , COLOR_PAIR(COLOR_WALL)  , A_NORMAL , false , false , false , "Parede" };
+const Tile grate    = (Tile){ GROUND   , '#' , COLOR_PAIR(COLOR_WALL)  , A_NORMAL , false , false , false , "Grelha de ventilação. \"Consigo ver o outro lado\""};
 const Tile fakewall = (Tile){ WALL     , ' ' , COLOR_PAIR(COLOR_WALL)  , A_NORMAL , true  , false , false , "Parede?" };
 const Tile ground   = (Tile){ GROUND   , '.' , COLOR_PAIR(COLOR_GROUND), A_NORMAL , true  , false , false , "Carpete" };
 const Tile hdoor    = (Tile){ HDOOR    , '-' , COLOR_PAIR(COLOR_DOOR)  , A_NORMAL , false , false , false , "Uma porta. Parece destrancada" };
 const Tile vdoor    = (Tile){ VDOOR    , '|' , COLOR_PAIR(COLOR_DOOR)  , A_NORMAL , false , false , false , "Uma porta. Parece destrancada" };
-const Tile lockdoor = (Tile){ LOCKDOOR , '#' , COLOR_PAIR(COLOR_WALL)  , A_NORMAL , false , false , false , "Uma porta. Há uma fechadura nela"}; 
+const Tile lockdoor = (Tile){ LOCKDOOR , ';' , COLOR_PAIR(COLOR_DOOR)  , A_NORMAL , false , false , false , "Uma porta. Há uma fechadura nela"}; 
 
 
-const Tile blanktile = (Tile){BLANK, '!', COLOR_PAIR(COLOR_DEFAULT), A_BOLD, true, false, false, "BLANKTILE"};
+const Tile blanktile = (Tile){ERROR, '!', COLOR_PAIR(COLOR_DEFAULT), A_BOLD, true, false, false, "BLANKTILE"};
+
+// Itens                    id       point          ch    color                        style      inter   pickb   seen    visib   desc
+const Item button = (Item){ BUTTON , (Point){0,0} , 'i' , COLOR_PAIR(COLOR_DEFAULT2) , A_BOLD   , true  , false , false , false , "Pedestal com um botão no topo" };
+const Item statue = (Item){ STATUE , (Point){0,0} , '&' , COLOR_PAIR(COLOR_DEFAULT)  , A_NORMAL , false , false , false , false , "Uma estátua sinistra" };
 
 // Fns
 Tile** worldgen();
 void draw_map(int, int);
+void make_fov(int);
 bool player_mv(int, int);
 void player_closedoor();
 void cursor_mv();
@@ -307,6 +343,7 @@ void init() {
 	player->ch = '@';
 	player->color = COLOR_PAIR(COLOR_DEFAULT);
 	player->style = A_NORMAL;
+	strcpy(player->desc, name);
 	
 	// Mapa
 	map = worldgen();
@@ -340,20 +377,7 @@ void loop() {
 			}
 
 			// Gerador de FOV
-			int vision_r = 10;
-			for (int deg = 0; deg < 360; deg++) {
-				for (int r = 0; r <= vision_r; r++) {
-					int x = (int)(cos(rads(deg))*r) + player->pos.x,
-						y = (int)(sin(rads(deg))*r) + player->pos.y;
-
-					if (x < 0 || x >= WORLD_WIDTH || y < 0 || y >= WORLD_HEIGHT) continue;
-					
-					map[y][x].visible = true;
-					map[y][x].seen = true;
-
-					if (map[y][x].id == WALL) break;
-				} 
-			}
+			make_fov(12);
 
 			if (player->pos.y > 9) popup_pos.y = 0;
 			else                   popup_pos.y = 16;
@@ -365,8 +389,8 @@ void loop() {
 			erase();
 
 			// Menus
-			mvprintw(0, 26, "╭I┬S┬!┬?╮");
-			menu_chsheet(26, 1);
+			mvprintw(0, WORLD_WIDTH+1, "╭I┬S┬!┬?╮");
+			menu_chsheet(WORLD_WIDTH+1, 1);
 
 			// Mapa
 			draw_map(0, 0);
@@ -416,9 +440,9 @@ void loop() {
 			}
 
 			sprintf(buff, "%d", ticks / 1000);
-			mvprintw(3, 50, buff);
+			mvprintw(2, 75, buff);
 			sprintf(buff, "%d", turn);
-			mvprintw(4, 50, buff);
+			mvprintw(3, 75, buff);
 
 			refresh();
 			napms(DELAY_MS);
@@ -443,7 +467,9 @@ void cursor_mv() {
 	attron(COLOR_PAIR(COLOR_DESC));
 	
 	mvaddch(cursorpos.y, cursorpos.x+1, '<');
-	if (cursorpos.x >= 0 && cursorpos.y >= 0 && cursorpos.x < WORLD_WIDTH && cursorpos.y < WORLD_HEIGHT) printw(map[cursorpos.y][cursorpos.x].desc);
+	if (cursorpos.x >= 0 && cursorpos.y >= 0 && cursorpos.x < WORLD_WIDTH && cursorpos.y < WORLD_HEIGHT && map[cursorpos.y][cursorpos.x].seen) {
+		printw(map[cursorpos.y][cursorpos.x].desc);
+	}
 	addch(' ');
 	
 	attroff(COLOR_PAIR(COLOR_DESC));
@@ -470,8 +496,12 @@ Tile** worldgen() {
 			map[y][x].seen = false;
 
 			switch (ch) {
+			// mapa
 			case '#':
 				map[y][x] = wall;
+				break;
+			case 'x':
+				map[y][x] = grate;
 				break;
 			case '%':
 				map[y][x] = fakewall;
@@ -493,8 +523,12 @@ Tile** worldgen() {
 			case '=':
 				map[y][x] = lockdoor;
 				break;
+				
+			// itens
+			case 'i':
+				
 			default:
-				map[y][x] = blanktile;
+				map[y][x] = ground;
 			}
 		}
 		
@@ -537,19 +571,36 @@ void make_fov(int vision_radius) {
 				y = (int)(sin(rads(deg))*r) + player->pos.y;
 
 			if (x < 0 || x >= WORLD_WIDTH || y < 0 || y >= WORLD_HEIGHT) continue;
-			
+		
 			map[y][x].visible = true;
 			map[y][x].seen = true;
 
-			if (map[y][x].id == (WALL | HDOOR | VDOOR)) break;
+			if (/*!map[y][x].walkable &&*/map[y][x].id != GROUND) break;
 		} 
 	}
 }
+
+// --- ITENS ----------------------------------------
+
+void append_item(Item *item) {
+	for (int i = 0; i < GRP_SIZE; i++) {
+		if (item_grp[i] == NULL) {
+			item_grp[i] = item;
+			break;
+		}
+	}
+}
+
+
+
 
 // --- PLAYER ---------------------------------------
 
 bool player_mv(int x, int y) {
 	Tile tile = map[player->pos.y + y][player->pos.x + x];
+
+	// fakewall
+	if (tile.id == WALL && tile.walkable) map[player->pos.y + y][player->pos.x + x].ch = '.';
 
 	if (tile.walkable) {
 		player->pos.x += x;
@@ -589,6 +640,10 @@ void player_closedoor() {
 		}
 	}
 }
+
+// --- ENTIDADES ------------------------------------
+
+
 
 // --- MAIN -----------------------------------------
 

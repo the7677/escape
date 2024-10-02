@@ -59,7 +59,7 @@ enum TileID {
 	UPSTAIRS,
 	DOWNSTAIRS,
 	GENERIC,
-	STATUEE,
+	STATUE,
 	ERROR   
 };
 
@@ -77,7 +77,6 @@ typedef struct {
 enum ItemID {
 	CHEST,
 	BUTTON,
-	STATUE,
 };
 
 typedef struct {
@@ -189,23 +188,22 @@ const char cheatsheet[][70] = {
 	"│>      descer escada │",
 	"╰─────────────────────╯",
 };
-
-// Tiles                      id         ch    color                     style      wlkb    seen    visib   desc
-const Tile wall     = (Tile){ WALL     , ' ' , COLOR_PAIR(COLOR_WALL)  , A_NORMAL , false , false , false , "Parede" };
-const Tile grate    = (Tile){ GROUND   , '#' , COLOR_PAIR(COLOR_WALL)  , A_NORMAL , false , false , false , "Grelha de ventilação. \"Consigo ver o outro lado\""};
-const Tile fakewall = (Tile){ WALL     , ' ' , COLOR_PAIR(COLOR_WALL)  , A_NORMAL , true  , false , false , "Parede?" };
-const Tile ground   = (Tile){ GROUND   , '.' , COLOR_PAIR(COLOR_GROUND), A_NORMAL , true  , false , false , "Carpete" };
-const Tile hdoor    = (Tile){ HDOOR    , '-' , COLOR_PAIR(COLOR_DOOR)  , A_NORMAL , false , false , false , "Uma porta. Parece destrancada" };
-const Tile vdoor    = (Tile){ VDOOR    , '|' , COLOR_PAIR(COLOR_DOOR)  , A_NORMAL , false , false , false , "Uma porta. Parece destrancada" };
-const Tile lockdoor = (Tile){ LOCKDOOR , ';' , COLOR_PAIR(COLOR_DOOR)  , A_NORMAL , false , false , false , "Uma porta. Há uma fechadura nela"}; 
-
+ 
+// Tiles                      id         ch    color                       style      wlkb    seen    visib   desc
+const Tile wall     = (Tile){ WALL     , ' ' , COLOR_PAIR(COLOR_WALL)    , A_NORMAL , false , false , false , "Parede" };
+const Tile grate    = (Tile){ GROUND   , '#' , COLOR_PAIR(COLOR_WALL)    , A_NORMAL , false , false , false , "Grelha de ventilação. \"Consigo ver o outro lado\""};
+const Tile fakewall = (Tile){ WALL     , ' ' , COLOR_PAIR(COLOR_WALL)    , A_NORMAL , true  , false , false , "Parede?" };
+const Tile ground   = (Tile){ GROUND   , '.' , COLOR_PAIR(COLOR_GROUND)  , A_NORMAL , true  , false , false , "Carpete" };
+const Tile hdoor    = (Tile){ HDOOR    , '-' , COLOR_PAIR(COLOR_DOOR)    , A_NORMAL , false , false , false , "Uma porta. Parece destrancada" };
+const Tile vdoor    = (Tile){ VDOOR    , '|' , COLOR_PAIR(COLOR_DOOR)    , A_NORMAL , false , false , false , "Uma porta. Parece destrancada" };
+const Tile lockdoor = (Tile){ LOCKDOOR , ';' , COLOR_PAIR(COLOR_DOOR)    , A_NORMAL , false , false , false , "Uma porta. Há uma fechadura nela"}; 
+const Tile statue   = (Tile){ STATUE   , '&' , COLOR_PAIR(COLOR_DEFAULT) , A_NORMAL , false , false , false , "Uma estátua sinistra" };
 
 const Tile blanktile = (Tile){ERROR, '!', COLOR_PAIR(COLOR_DEFAULT), A_BOLD, true, false, false, "BLANKTILE"};
 
 // Itens                    id       point          ch    color                        style      inter   pickb   seen    visib   desc
 const Item chest  = (Item){ CHEST  , (Point){0,0} , 'n' , COLOR_PAIR(COLOR_DEFAULT2) , A_NORMAL , true  , false , false , false , "Baú" };
 const Item button = (Item){ BUTTON , (Point){0,0} , 'i' , COLOR_PAIR(COLOR_DEFAULT2) , A_BOLD   , true  , false , false , false , "Pedestal com um botão no topo" };
-const Item statue = (Item){ STATUE , (Point){0,0} , '&' , COLOR_PAIR(COLOR_DEFAULT)  , A_NORMAL , false , false , false , false , "Uma estátua sinistra" };
 
 // Fns
 Tile** worldgen();
@@ -343,11 +341,22 @@ void init() {
 	
 	// Player
 	player = new(Entity);
-	player->pos = (Point){7, 6};
+	append(entity_grp, player);	
+	player->pos = (Point){8, 3};
 	player->ch = '@';
 	player->color = COLOR_PAIR(COLOR_DEFAULT);
 	player->style = A_NORMAL;
 	strcpy(player->desc, name);
+
+	// Monstro
+	Entity *sudis = new(Entity);
+	append(entity_grp, sudis);
+	sudis->pos = (Point){3, 10};
+	sudis->ch = 's';
+	sudis->color = COLOR_PAIR(COLOR_DEFAULT2);
+	sudis->style = A_NORMAL;
+	sudis->visible = false;
+	strcpy(sudis->desc, "O Sudis");
 	
 	append(entity_grp, player);	
 }
@@ -373,11 +382,7 @@ void loop() {
 				turn++;
 			}
 
-			for (int y = 0; y < WORLD_HEIGHT; y++) {
-				for (int x = 0; x < WORLD_WIDTH; x++) {
-					map[y][x].visible = false;
-				}
-			}
+			
 
 			// Gerador de FOV
 			make_fov(12);
@@ -477,7 +482,7 @@ void cursor_mv() {
 
 	if (cursorpos.x >= 0 && cursorpos.y >= 0 && cursorpos.x < WORLD_WIDTH && cursorpos.y < WORLD_HEIGHT && map[cursorpos.y][cursorpos.x].seen) {
 		for (int i = 0; i < GRP_SIZE; i++) {
-			if (entity_grp[i] != NULL && entity_grp[i]->pos.x == cursorpos.x && entity_grp[i]->pos.y == cursorpos.y) {
+			if (entity_grp[i] != NULL && entity_grp[i]->pos.x == cursorpos.x && entity_grp[i]->pos.y == cursorpos.y && entity_grp[i]->visible) {
 				printw(entity_grp[i]->desc);
 				addch(' ');
 
@@ -529,18 +534,16 @@ Tile** worldgen() {
 				map[y][x] = ground;
 				map[y][x].ch = rand() % 5 == 0 ? '"' : ' ';
 				map[y][x].style = rand() % 2 == 0 ? A_DIM : A_NORMAL;
-				
 				break;
 			case '-':
-				if (map[y][x-1].id == WALL){
-					map[y][x] = hdoor;
-					break;
-				}
-
-				map[y][x] = vdoor;
+				if (map[y][x-1].id == WALL) map[y][x] = hdoor;
+				else map[y][x] = vdoor;
 				break;
 			case '=':
 				map[y][x] = lockdoor;
+				break;
+			case 'S':
+				map[y][x] = statue;
 				break;
 				
 			// itens
@@ -584,10 +587,32 @@ void draw_map(int offset_x, int offset_y) {
 }
 
 void make_fov(int vision_radius) {
+	for (int y = 0; y < WORLD_HEIGHT; y++) {
+		for (int x = 0; x < WORLD_WIDTH; x++) {
+			map[y][x].visible = false;
+		}
+	}
+
+	for (int i = 0; i < GRP_SIZE; i++) {
+		if (entity_grp[i] == NULL) continue;
+
+		entity_grp[i]->visible = false;
+	}
+
 	for (int deg = 0; deg < 360; deg++) {
 		for (int r = 0; r <= vision_radius; r++) {
 			int x = (int)(cos(rads(deg))*r) + player->pos.x,
 				y = (int)(sin(rads(deg))*r) + player->pos.y;
+
+			for (int i = 0; i < GRP_SIZE; i++) {
+				if (entity_grp[i] == NULL) continue;
+
+				if (entity_grp[i]->pos.x == x && entity_grp[i]->pos.y == y) {
+					entity_grp[i]->visible = true;
+				}
+				
+			}
+
 
 			if (x < 0 || x >= WORLD_WIDTH || y < 0 || y >= WORLD_HEIGHT) continue;
 		
@@ -597,6 +622,7 @@ void make_fov(int vision_radius) {
 			if (/*!map[y][x].walkable &&*/map[y][x].id != GROUND) break;
 		} 
 	}
+
 }
 
 // --- ITENS ----------------------------------------
@@ -664,7 +690,7 @@ void player_closedoor() {
 
 void draw_entities() {
 	for (int i = 0; i < GRP_SIZE; i++) {
-		if (entity_grp[i] == NULL) continue;
+		if (entity_grp[i] == NULL || !entity_grp[i]->visible) continue;
 
 		Entity *ett = entity_grp[i];
 
@@ -672,15 +698,17 @@ void draw_entities() {
 	}
 }
 
-void append_entity(Entity *grp[], Entity *ett) {
+// --- ITENS ----------------------------------------
+
+void draw_items() {
 	for (int i = 0; i < GRP_SIZE; i++) {
-		if (grp[i] == NULL) {
-			grp[i] = ett;
-			break;
-		}
+		if (item_grp[i] == NULL || !item_grp[i]->visible) continue;
+
+		Item *item = item_grp[i];
+
+		mvaddch(item->pos.y, item->pos.x, item->ch | item->color | item->style);
 	}
 }
-
 
 // --- MAIN -----------------------------------------
 
@@ -689,7 +717,7 @@ int main(int argc, char *argv[]) {
 	if (argc > 2 && strlen(argv[2]) < 32) {
 		strcpy(name, argv[2]);	
 	}
-	if (argc > 1 && !strcmp(argv[1], "ward")) {
+	if (argc > 1 && !strcmp(argv[1], "ghost")) {
 		init();
 		loop();
 		close();

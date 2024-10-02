@@ -3,7 +3,7 @@ OUTPUT_FILE = main
 LIB_FLAGS   = -lm -lncurses
 CC          = gcc
 MINGW_CC    = i686-w64-mingw32-gcc
-ARGV        = ward
+ARGV        = ghost
 OS          = $(shell uname)
 
 ifeq ($(OS), Windows_NT)

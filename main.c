@@ -11,7 +11,7 @@
 #define WORLD_WIDTH  50
 #define WORLD_HEIGHT 30
 
-#define GRP_SIZE 64
+#define GRP_SIZE 16
 
 #define COLOR_DEFAULT    1
 #define COLOR_DEFAULT2   2
@@ -31,7 +31,7 @@
 #define rads(x) (x * (PI/180))
 #define new(T)  (T*)malloc(sizeof(T))
 // #define append(x) for (int i = 0; i < GRP_SIZE; i++) if (item_grp[i] == NULL) { item_grp[i] = item; break; }
-#define append(g, i) for (int i = 0; i < GRP_SIZE; i++) if (g[i] == NULL) { g[i] = i; break; }
+#define append(g, n) for (int i = 0; i < GRP_SIZE; i++) if (g[i] == NULL) { g[i] = n; break; }
 
 
 // --- ENGINE ---------------------------------------
@@ -59,6 +59,7 @@ enum TileID {
 	UPSTAIRS,
 	DOWNSTAIRS,
 	GENERIC,
+	STATUEE,
 	ERROR   
 };
 
@@ -202,6 +203,7 @@ const Tile lockdoor = (Tile){ LOCKDOOR , ';' , COLOR_PAIR(COLOR_DOOR)  , A_NORMA
 const Tile blanktile = (Tile){ERROR, '!', COLOR_PAIR(COLOR_DEFAULT), A_BOLD, true, false, false, "BLANKTILE"};
 
 // Itens                    id       point          ch    color                        style      inter   pickb   seen    visib   desc
+const Item chest  = (Item){ CHEST  , (Point){0,0} , 'n' , COLOR_PAIR(COLOR_DEFAULT2) , A_NORMAL , true  , false , false , false , "Baú" };
 const Item button = (Item){ BUTTON , (Point){0,0} , 'i' , COLOR_PAIR(COLOR_DEFAULT2) , A_BOLD   , true  , false , false , false , "Pedestal com um botão no topo" };
 const Item statue = (Item){ STATUE , (Point){0,0} , '&' , COLOR_PAIR(COLOR_DEFAULT)  , A_NORMAL , false , false , false , false , "Uma estátua sinistra" };
 
@@ -214,6 +216,7 @@ void player_closedoor();
 void cursor_mv();
 void menu_chsheet(int, int);
 enum TileID door_axis(int ,int);
+void draw_entities();
 
 
 enum Signal controls(int input) {
@@ -326,16 +329,17 @@ void init() {
 	start_color();           // Inicia a compatibilidade com cores
 	
 	//        define             foreground     background
-	init_pair(COLOR_DEFAULT    , COLOR_WHITE   , COLOR_BLACK);
-	init_pair(COLOR_DEFAULT2   , COLOR_YELLOW  , COLOR_BLACK);
-	init_pair(COLOR_UNSEEN     , COLOR_BLUE    , COLOR_BLACK);
-	init_pair(COLOR_UNSEENWALL , COLOR_BLACK   , COLOR_BLUE);
-	init_pair(COLOR_WALL       , COLOR_BLACK   , COLOR_CYAN);
-	init_pair(COLOR_GROUND     , COLOR_MAGENTA , COLOR_BLACK);
-	init_pair(COLOR_DOOR       , COLOR_YELLOW  , COLOR_BLACK);
-	init_pair(COLOR_DESC       , COLOR_BLACK   , COLOR_GREEN);
+	init_pair( COLOR_DEFAULT    , COLOR_WHITE   , COLOR_BLACK );
+	init_pair( COLOR_DEFAULT2   , COLOR_YELLOW  , COLOR_BLACK );
+	init_pair( COLOR_UNSEEN     , COLOR_BLUE    , COLOR_BLACK );
+	init_pair( COLOR_UNSEENWALL , COLOR_BLACK   , COLOR_BLUE  );
+	init_pair( COLOR_WALL       , COLOR_BLACK   , COLOR_CYAN  );
+	init_pair( COLOR_GROUND     , COLOR_MAGENTA , COLOR_BLACK );
+	init_pair( COLOR_DOOR       , COLOR_YELLOW  , COLOR_BLACK );
+	init_pair( COLOR_DESC       , COLOR_BLACK   , COLOR_GREEN );
 
 	// Mapa
+	map = worldgen();
 	
 	// Player
 	player = new(Entity);
@@ -345,8 +349,7 @@ void init() {
 	player->style = A_NORMAL;
 	strcpy(player->desc, name);
 	
-	// Mapa
-	map = worldgen();
+	append(entity_grp, player);	
 }
 
 void loop() {
@@ -395,7 +398,11 @@ void loop() {
 			// Mapa
 			draw_map(0, 0);
 
-			mvaddch(player->pos.y, player->pos.x, player->ch | player->color | player->style);
+			// Itens
+
+			// Entidades
+			// mvaddch(player->pos.y, player->pos.x, player->ch | player->color | player->style);
+			draw_entities();
 
 			// Tutorial
 			if (turn <= 10 && mode == NORMAL) {
@@ -465,12 +472,24 @@ void close() {
 
 void cursor_mv() {
 	attron(COLOR_PAIR(COLOR_DESC));
-	
+
 	mvaddch(cursorpos.y, cursorpos.x+1, '<');
+
 	if (cursorpos.x >= 0 && cursorpos.y >= 0 && cursorpos.x < WORLD_WIDTH && cursorpos.y < WORLD_HEIGHT && map[cursorpos.y][cursorpos.x].seen) {
+		for (int i = 0; i < GRP_SIZE; i++) {
+			if (entity_grp[i] != NULL && entity_grp[i]->pos.x == cursorpos.x && entity_grp[i]->pos.y == cursorpos.y) {
+				printw(entity_grp[i]->desc);
+				addch(' ');
+
+				attroff(COLOR_PAIR(COLOR_DESC));
+
+				return;
+			}	
+		}
+		
 		printw(map[cursorpos.y][cursorpos.x].desc);
+		addch(' ');
 	}
-	addch(' ');
 	
 	attroff(COLOR_PAIR(COLOR_DESC));
 }
@@ -641,8 +660,26 @@ void player_closedoor() {
 	}
 }
 
-// --- ENTIDADES ------------------------------------
+// --- OUTRAS ENTIDADES -----------------------------
 
+void draw_entities() {
+	for (int i = 0; i < GRP_SIZE; i++) {
+		if (entity_grp[i] == NULL) continue;
+
+		Entity *ett = entity_grp[i];
+
+		mvaddch(ett->pos.y, ett->pos.x, ett->ch | ett->color | ett->style);
+	}
+}
+
+void append_entity(Entity *grp[], Entity *ett) {
+	for (int i = 0; i < GRP_SIZE; i++) {
+		if (grp[i] == NULL) {
+			grp[i] = ett;
+			break;
+		}
+	}
+}
 
 
 // --- MAIN -----------------------------------------

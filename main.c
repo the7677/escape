@@ -382,7 +382,6 @@ void loop() {
 		/* Controls */ {
 			if (input == 'g') g_pressed = true;	
 			signal = controls(input);
-						
 		}
 		
 		/* Update */ {
@@ -391,10 +390,7 @@ void loop() {
 			if (signal & NEXT_TURN) {
 				turn++;
 			}
-
 			
-
-			// Gerador de FOV
 			make_fov(12);
 
 			if (player->pos.y > 9) popup_pos.y = 0;
@@ -405,8 +401,6 @@ void loop() {
 		
 		/* Draw */ {
 			erase();
-
-			mvprintw(40, 0, "%b", map[cursorpos.y][cursorpos.x].flags);
 
 			// Menus
 			mvprintw(0, WORLD_WIDTH+1, "╭I┬S┬!┬?╮");
@@ -587,7 +581,7 @@ void draw_map(int offset_x, int offset_y) {
 			mvaddch(
 				offset_y + y,
 				offset_x + x,
-				map[y][x].ch                                                     | // Char
+				map[y][x].ch                                                               | // Char
 				((map[y][x].flags & VISIBLE) ? map[y][x].color : COLOR_PAIR(COLOR_UNSEEN)) | // Cor
 			 	((map[y][x].flags & VISIBLE) ? map[y][x].style : A_DIM)                      // Estilo
 		 	);
@@ -628,7 +622,7 @@ void make_fov(int vision_radius) {
 			map[y][x].flags addflag VISIBLE;
 			map[y][x].flags addflag SEEN;
 
-			if (/*!map[y][x].walkable &&*/map[y][x].id != GROUND) break;
+			if (!(map[y][x].flags & SEETHROUGH)) break;
 		} 
 	}
 
@@ -664,6 +658,7 @@ bool player_mv(int x, int y) {
 	// abrir porta
 	} else if (tile.id == HDOOR || tile.id == VDOOR) {
 		map[player->pos.y + y][player->pos.x + x].flags addflag WALKABLE;
+		map[player->pos.y + y][player->pos.x + x].flags addflag SEETHROUGH;
 		map[player->pos.y + y][player->pos.x + x].ch = '\'';
 	}
 	
@@ -684,10 +679,12 @@ void player_closedoor() {
 				
 			case HDOOR:
 				map[y][x].flags rmflag WALKABLE;
+				map[y][x].flags rmflag SEETHROUGH;
 				map[y][x].ch = '-';
 				break;
 			case VDOOR:
 				map[y][x].flags rmflag WALKABLE;
+				map[y][x].flags rmflag SEETHROUGH;
 				map[y][x].ch = '|';
 				break;
 			default:

@@ -30,9 +30,11 @@
 
 #define rads(x) (x * (PI/180))
 #define new(T)  (T*)malloc(sizeof(T))
-// #define append(x) for (int i = 0; i < GRP_SIZE; i++) if (item_grp[i] == NULL) { item_grp[i] = item; break; }
 #define append(g, n) for (int i = 0; i < GRP_SIZE; i++) if (g[i] == NULL) { g[i] = n; break; }
 
+// protótipo
+#define addflag |=
+#define rmflag  &= ~
 
 // --- ENGINE ---------------------------------------
 
@@ -63,14 +65,19 @@ enum TileID {
 	ERROR   
 };
 
+enum TileFlags {
+	WALKABLE   = 0b000000001,
+	SEEN       = 0b000000010,
+	VISIBLE    = 0b000000100,
+	SEETHROUGH = 0b000001000,
+};
+
 typedef struct {
 	enum TileID id;
 	char ch;
 	unsigned color;
 	unsigned style;
-	bool walkable;
-	bool seen;
-	bool visible;
+	enum TileFlags flags;
 	char desc[64];
 } Tile;
 
@@ -155,11 +162,11 @@ const char map1_sketch[WORLD_HEIGHT][WORLD_WIDTH] = {
 	"#.......##.#.#.####%%%%##%###############%########", // 
 	"##......%###%###%%###%#%%%###############%########", // 
 	"#####..#%%%%%%%%%%%%%%%%#%#############%%%########", // 
-	"##############%###%#####%%###############%%%######", // 
+	"#########%########%#####%%###############%%%######", // 
 	"#####...........##%%%%%%%################%########", // 
 	"####.....#....#######%###################%########", // 
-	"#####..........#####%%%################%%%%%######", // 
-	"#######.....#.........################%%###%%#####", // 
+	"####...........#####%%%################%%%%%######", // 
+	"#####.......#.........################%%###%%#####", // 
 	"##################################################", // 
 };
 
@@ -171,7 +178,7 @@ const char cheatsheet[][70] = {
 	"│                     │",
 	"│l      examinar      │",
 	"│                     │",
-	"│c      abrir porta   │",
+	"│c      fechar porta  │",
 	"│                     │",
 	"│g      pegar item    │",
 	"│                     │",
@@ -189,17 +196,17 @@ const char cheatsheet[][70] = {
 	"╰─────────────────────╯",
 };
  
-// Tiles                      id         ch    color                       style      wlkb    seen    visib   desc
-const Tile wall     = (Tile){ WALL     , ' ' , COLOR_PAIR(COLOR_WALL)    , A_NORMAL , false , false , false , "Parede" };
-const Tile grate    = (Tile){ GROUND   , '#' , COLOR_PAIR(COLOR_WALL)    , A_NORMAL , false , false , false , "Grelha de ventilação. \"Consigo ver o outro lado\""};
-const Tile fakewall = (Tile){ WALL     , ' ' , COLOR_PAIR(COLOR_WALL)    , A_NORMAL , true  , false , false , "Parede?" };
-const Tile ground   = (Tile){ GROUND   , '.' , COLOR_PAIR(COLOR_GROUND)  , A_NORMAL , true  , false , false , "Carpete" };
-const Tile hdoor    = (Tile){ HDOOR    , '-' , COLOR_PAIR(COLOR_DOOR)    , A_NORMAL , false , false , false , "Uma porta. Parece destrancada" };
-const Tile vdoor    = (Tile){ VDOOR    , '|' , COLOR_PAIR(COLOR_DOOR)    , A_NORMAL , false , false , false , "Uma porta. Parece destrancada" };
-const Tile lockdoor = (Tile){ LOCKDOOR , ';' , COLOR_PAIR(COLOR_DOOR)    , A_NORMAL , false , false , false , "Uma porta. Há uma fechadura nela"}; 
-const Tile statue   = (Tile){ STATUE   , '&' , COLOR_PAIR(COLOR_DEFAULT) , A_NORMAL , false , false , false , "Uma estátua sinistra" };
+// Tiles                      id         ch    color                       style      flags                   desc
+const Tile wall     = (Tile){ WALL     , ' ' , COLOR_PAIR(COLOR_WALL)    , A_NORMAL , 0                     , "Parede" };
+const Tile grate    = (Tile){ GROUND   , '#' , COLOR_PAIR(COLOR_WALL)    , A_NORMAL , SEETHROUGH            , "Grelha de ventilação. \"Consigo ver o outro lado\""};
+const Tile fakewall = (Tile){ WALL     , ' ' , COLOR_PAIR(COLOR_WALL)    , A_NORMAL , WALKABLE              , "Parede?" };
+const Tile ground   = (Tile){ GROUND   , ' ' , COLOR_PAIR(COLOR_GROUND)  , A_NORMAL , WALKABLE | SEETHROUGH , "Carpete" };
+const Tile hdoor    = (Tile){ HDOOR    , '-' , COLOR_PAIR(COLOR_DOOR)    , A_NORMAL , 0                     , "Uma porta. Parece destrancada" };
+const Tile vdoor    = (Tile){ VDOOR    , '|' , COLOR_PAIR(COLOR_DOOR)    , A_NORMAL , 0                     , "Uma porta. Parece destrancada" };
+const Tile lockdoor = (Tile){ LOCKDOOR , ';' , COLOR_PAIR(COLOR_DOOR)    , A_NORMAL , 0                     , "Uma porta. Há uma fechadura nela"}; 
+const Tile statue   = (Tile){ STATUE   , '&' , COLOR_PAIR(COLOR_DEFAULT) , A_NORMAL , 0                     , "Uma estátua sinistra" };
 
-const Tile blanktile = (Tile){ERROR, '!', COLOR_PAIR(COLOR_DEFAULT), A_BOLD, true, false, false, "BLANKTILE"};
+const Tile blanktile = (Tile){ERROR, '!', COLOR_PAIR(COLOR_DEFAULT), A_BOLD, 0, "BLANKTILE"};
 
 // Itens                    id       point          ch    color                        style      inter   pickb   seen    visib   desc
 const Item chest  = (Item){ CHEST  , (Point){0,0} , 'n' , COLOR_PAIR(COLOR_DEFAULT2) , A_NORMAL , true  , false , false , false , "Baú" };
@@ -252,7 +259,7 @@ enum Signal controls(int input) {
 		case SLEEP:
 
 		default:
-		
+			break;
 		}
 	}	
 
@@ -274,8 +281,9 @@ enum Signal controls(int input) {
 		case KEY_RIGHT: cursorpos.x++; break;
 		
 		default:
-
+			break;
 		}
+		
 		return NONE;
 	}
 	
@@ -285,28 +293,28 @@ enum Signal controls(int input) {
 		switch (input) {
 		
 		case KEY_UP:
-			if (!player_mv(0, -1)) return NONE;
+			if (player_mv(0, -1)) return NEXT_TURN;
 			break;
 		case KEY_DOWN:
-			if (!player_mv(0, 1)) return NONE;
+			if (player_mv(0, 1)) return NEXT_TURN;
 			break;
 		case KEY_LEFT:
-			if (!player_mv(-1, 0)) return NONE;
+			if (player_mv(-1, 0)) return NEXT_TURN;
 			break;
 		case KEY_RIGHT:
-			if (!player_mv(1, 0)) return NONE;
+			if (player_mv(1, 0)) return NEXT_TURN;
 			break;
 			
 		case 'c':
 			player_closedoor();
 			return NONE;
 		default:
-		
+			break;
 		}
 	}
 
 	// Se não houver retorno precoce, a função emitirá um sinal para incrementar o turno.
-	return NEXT_TURN;
+	return NONE;
 }
 
 void init() {
@@ -357,6 +365,8 @@ void init() {
 	sudis->style = A_NORMAL;
 	sudis->visible = false;
 	strcpy(sudis->desc, "O Sudis");
+
+	strcpy(map[3][7].desc, "Porta especial");
 	
 	append(entity_grp, player);	
 }
@@ -396,6 +406,8 @@ void loop() {
 		/* Draw */ {
 			erase();
 
+			mvprintw(40, 0, "%b", map[cursorpos.y][cursorpos.x].flags);
+
 			// Menus
 			mvprintw(0, WORLD_WIDTH+1, "╭I┬S┬!┬?╮");
 			menu_chsheet(WORLD_WIDTH+1, 1);
@@ -406,7 +418,6 @@ void loop() {
 			// Itens
 
 			// Entidades
-			// mvaddch(player->pos.y, player->pos.x, player->ch | player->color | player->style);
 			draw_entities();
 
 			// Tutorial
@@ -480,7 +491,7 @@ void cursor_mv() {
 
 	mvaddch(cursorpos.y, cursorpos.x+1, '<');
 
-	if (cursorpos.x >= 0 && cursorpos.y >= 0 && cursorpos.x < WORLD_WIDTH && cursorpos.y < WORLD_HEIGHT && map[cursorpos.y][cursorpos.x].seen) {
+	if (cursorpos.x >= 0 && cursorpos.y >= 0 && cursorpos.x < WORLD_WIDTH && cursorpos.y < WORLD_HEIGHT && (map[cursorpos.y][cursorpos.x].flags & SEEN)) {
 		for (int i = 0; i < GRP_SIZE; i++) {
 			if (entity_grp[i] != NULL && entity_grp[i]->pos.x == cursorpos.x && entity_grp[i]->pos.y == cursorpos.y && entity_grp[i]->visible) {
 				printw(entity_grp[i]->desc);
@@ -517,8 +528,6 @@ Tile** worldgen() {
 		for (int x = 0; x < WORLD_WIDTH; x++) {
 			char ch = map1_sketch[y][x];
 			
-			map[y][x].seen = false;
-
 			switch (ch) {
 			// mapa
 			case '#':
@@ -532,8 +541,8 @@ Tile** worldgen() {
 				break;
 			case '.':
 				map[y][x] = ground;
-				map[y][x].ch = rand() % 5 == 0 ? '"' : ' ';
-				map[y][x].style = rand() % 2 == 0 ? A_DIM : A_NORMAL;
+				map[y][x].ch = rand() % 5 ? ' ' : '"';
+				map[y][x].style = rand() % 2 ? A_NORMAL : A_DIM;
 				break;
 			case '-':
 				if (map[y][x-1].id == WALL) map[y][x] = hdoor;
@@ -551,9 +560,9 @@ Tile** worldgen() {
 				
 			default:
 				map[y][x] = ground;
+				break;
 			}
 		}
-		
 	}
 	
 	return map;
@@ -562,15 +571,15 @@ Tile** worldgen() {
 void draw_map(int offset_x, int offset_y) {
 	for (int y = 0; y < WORLD_HEIGHT; y++) {
 		for (int x = 0; x < WORLD_WIDTH; x++) {
-			if(!map[y][x].seen) continue;
+			if(!(map[y][x].flags & SEEN)) continue;
 			
 			if (map[y][x].id == WALL) {
 				mvaddch(
 					offset_y + y,
 					offset_x + x,
-					map[y][x].ch                                                         | // Char
-					(map[y][x].visible ? map[y][x].color : COLOR_PAIR(COLOR_UNSEENWALL)) | // Cor
-				 	(map[y][x].visible ? map[y][x].style : A_DIM)                          // Estilo
+					map[y][x].ch                                                                   | // Char
+					((map[y][x].flags & VISIBLE) ? map[y][x].color : COLOR_PAIR(COLOR_UNSEENWALL)) | // Cor
+				 	((map[y][x].flags & VISIBLE) ? map[y][x].style : A_DIM)                          // Estilo
 			 	);
 			 	continue;
 			 }
@@ -579,8 +588,8 @@ void draw_map(int offset_x, int offset_y) {
 				offset_y + y,
 				offset_x + x,
 				map[y][x].ch                                                     | // Char
-				(map[y][x].visible ? map[y][x].color : COLOR_PAIR(COLOR_UNSEEN)) | // Cor
-			 	(map[y][x].visible ? map[y][x].style : A_DIM)                      // Estilo
+				((map[y][x].flags & VISIBLE) ? map[y][x].color : COLOR_PAIR(COLOR_UNSEEN)) | // Cor
+			 	((map[y][x].flags & VISIBLE) ? map[y][x].style : A_DIM)                      // Estilo
 		 	);
 		}
 	}			
@@ -589,7 +598,7 @@ void draw_map(int offset_x, int offset_y) {
 void make_fov(int vision_radius) {
 	for (int y = 0; y < WORLD_HEIGHT; y++) {
 		for (int x = 0; x < WORLD_WIDTH; x++) {
-			map[y][x].visible = false;
+			map[y][x].flags rmflag VISIBLE;
 		}
 	}
 
@@ -616,8 +625,8 @@ void make_fov(int vision_radius) {
 
 			if (x < 0 || x >= WORLD_WIDTH || y < 0 || y >= WORLD_HEIGHT) continue;
 		
-			map[y][x].visible = true;
-			map[y][x].seen = true;
+			map[y][x].flags addflag VISIBLE;
+			map[y][x].flags addflag SEEN;
 
 			if (/*!map[y][x].walkable &&*/map[y][x].id != GROUND) break;
 		} 
@@ -645,15 +654,16 @@ bool player_mv(int x, int y) {
 	Tile tile = map[player->pos.y + y][player->pos.x + x];
 
 	// fakewall
-	if (tile.id == WALL && tile.walkable) map[player->pos.y + y][player->pos.x + x].ch = '.';
+	if (tile.id == WALL && (tile.flags & WALKABLE)) map[player->pos.y + y][player->pos.x + x].ch = '.';
 
-	if (tile.walkable) {
+	if (tile.flags & WALKABLE) {
 		player->pos.x += x;
 		player->pos.y += y;
 
 		return true;
+	// abrir porta
 	} else if (tile.id == HDOOR || tile.id == VDOOR) {
-		map[player->pos.y + y][player->pos.x + x].walkable = true;
+		map[player->pos.y + y][player->pos.x + x].flags addflag WALKABLE;
 		map[player->pos.y + y][player->pos.x + x].ch = '\'';
 	}
 	
@@ -673,14 +683,15 @@ void player_closedoor() {
 			switch (map[y][x].id) {
 				
 			case HDOOR:
-				map[y][x].walkable = false;
+				map[y][x].flags rmflag WALKABLE;
 				map[y][x].ch = '-';
 				break;
 			case VDOOR:
-				map[y][x].walkable = false;
+				map[y][x].flags rmflag WALKABLE;
 				map[y][x].ch = '|';
 				break;
 			default:
+				break;
 			}
 		}
 	}
